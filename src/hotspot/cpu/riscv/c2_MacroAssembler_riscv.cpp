@@ -243,6 +243,8 @@ void C2_MacroAssembler::string_indexof_char(Register str1, Register cnt1,
 typedef void (MacroAssembler::* load_chr_insn)(Register rd, const Address &adr, Register temp);
 
 void C2_MacroAssembler::emit_entry_barrier_stub(C2EntryBarrierStub* stub) {
+  IncompressibleRegion ir(this);  // Fixed length: see C2_MacroAssembler::entry_barrier_stub_size()
+
   // make guard value 4-byte aligned so that it can be accessed by atomic instructions on riscv
   int alignment_bytes = align(4);
 
@@ -1271,6 +1273,7 @@ static float_conditional_branch_insn float_conditional_branches[] =
 };
 
 void C2_MacroAssembler::cmp_branch(int cmpFlag, Register op1, Register op2, Label& label, bool is_far) {
+  IncompressibleRegion ir(this);  // TODO: RVC support for MachBranch nodes.
   assert(cmpFlag >= 0 && cmpFlag < (int)(sizeof(conditional_branches) / sizeof(conditional_branches[0])),
          "invalid conditional branch index");
   (this->*conditional_branches[cmpFlag])(op1, op2, label, is_far);
@@ -1279,6 +1282,7 @@ void C2_MacroAssembler::cmp_branch(int cmpFlag, Register op1, Register op2, Labe
 // This is a function should only be used by C2. Flip the unordered when unordered-greater, C2 would use
 // unordered-lesser instead of unordered-greater. Finally, commute the result bits at function do_one_bytecode().
 void C2_MacroAssembler::float_cmp_branch(int cmpFlag, FloatRegister op1, FloatRegister op2, Label& label, bool is_far) {
+  IncompressibleRegion ir(this);  // TODO: RVC support for MachBranch nodes.
   assert(cmpFlag >= 0 && cmpFlag < (int)(sizeof(float_conditional_branches) / sizeof(float_conditional_branches[0])),
          "invalid float conditional branch index");
   int booltest_flag = cmpFlag & ~(C2_MacroAssembler::double_branch_mask);
@@ -1287,6 +1291,7 @@ void C2_MacroAssembler::float_cmp_branch(int cmpFlag, FloatRegister op1, FloatRe
 }
 
 void C2_MacroAssembler::enc_cmpUEqNeLeGt_imm0_branch(int cmpFlag, Register op1, Label& L, bool is_far) {
+  IncompressibleRegion ir(this);  // TODO: RVC support for MachBranch nodes.
   switch (cmpFlag) {
     case BoolTest::eq:
     case BoolTest::le:
@@ -1302,6 +1307,7 @@ void C2_MacroAssembler::enc_cmpUEqNeLeGt_imm0_branch(int cmpFlag, Register op1, 
 }
 
 void C2_MacroAssembler::enc_cmpEqNe_imm0_branch(int cmpFlag, Register op1, Label& L, bool is_far) {
+  IncompressibleRegion ir(this);  // TODO: RVC support for MachBranch nodes.
   switch (cmpFlag) {
     case BoolTest::eq:
       beqz(op1, L, is_far);

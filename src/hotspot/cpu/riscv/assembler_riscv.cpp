@@ -117,6 +117,7 @@ void Assembler::_li(Register Rd, int64_t imm) {
 }
 
 void Assembler::li64(Register Rd, int64_t imm) {
+  IncompressibleRegion ir(this);  // Fixed length: see MacroAssembler::pd_patch_instruction_size
   // Load upper 32 bits. upper = imm[63:32], but if imm[31] == 1 or
   // (imm[31:20] == 0x7ff && imm[19] == 1), upper = imm[63:32] + 1.
   int64_t lower = imm & 0xffffffff;
@@ -215,8 +216,9 @@ void Assembler::ret() {
   void Assembler::NAME(const Address &adr, Register temp) {    \
     switch (adr.getMode()) {                                   \
       case Address::literal: {                                 \
-        relocate(adr.rspec());                                 \
-        NAME(adr.target(), temp);                              \
+        relocate(adr.rspec(), [&] {                            \
+          NAME(adr.target(), temp);                            \
+        });                                                    \
         break;                                                 \
       }                                                        \
       case Address::base_plus_offset: {                        \
@@ -242,6 +244,7 @@ void Assembler::wrap_label(Register r1, Register r2, Label &L, compare_and_branc
   if (is_far) {
     Label done;
     (this->*neg_insn)(r1, r2, done, /* is_far */ false);
+    IncompressibleRegion ir(this);  // TODO: RVC support for MachBranch nodes.
     j(L);
     bind(done);
   } else {

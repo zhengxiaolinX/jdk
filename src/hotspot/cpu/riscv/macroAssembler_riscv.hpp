@@ -399,6 +399,7 @@ class MacroAssembler: public Assembler {
 
  public:
   // Standard pseudoinstruction
+  void _nop();
   void nop();
   void mv(Register Rd, Register Rs);
   void notr(Register Rd, Register Rs);
@@ -620,7 +621,17 @@ public:
     sd(zr, Address(t0));
   }
 
+private:
   void la_patchable(Register reg1, const Address &dest, int32_t &offset);
+public:
+  template <typename Callback>
+  void la_patchable(Register reg1, const Address &dest, Callback do_offset) {
+    relocate(dest.rspec(), [&] {
+      int32_t off;
+      la_patchable(reg1, dest, off);
+      do_offset(off);
+    });
+  }
 
   virtual void _call_Unimplemented(address call_site) {
     mv(t1, call_site);
@@ -827,9 +838,9 @@ private:
     if (NearCpool) {
       ld(dest, const_addr);
     } else {
-      int32_t offset = 0;
-      la_patchable(dest, InternalAddress(const_addr.target()), offset);
-      ld(dest, Address(dest, offset));
+      la_patchable(dest, InternalAddress(const_addr.target()), [&] (int32_t off) {
+        ld(dest, Address(dest, off));
+      });
     }
   }
 
