@@ -2183,6 +2183,23 @@ public:
     emit_insts();
   }
 
+  // extract a 16-bit instruction.
+  static inline uint16_t c_extract(uint16_t val, unsigned msb, unsigned lsb) {
+    assert_cond(msb >= lsb && msb <= 15);
+    unsigned nbits = msb - lsb + 1;
+    uint16_t mask = (1U << nbits) - 1;
+    uint16_t result = val >> lsb;
+    result &= mask;
+    return result;
+  }
+
+  static inline int16_t c_sextract(uint16_t val, unsigned msb, unsigned lsb) {
+    assert_cond(msb >= lsb && msb <= 15);
+    int16_t result = val << (15 - msb);
+    result >>= (15 - msb + lsb);
+    return result;
+  }
+
   // patch a 16-bit instruction.
   static void c_patch(address a, unsigned msb, unsigned lsb, uint16_t val) {
     assert_cond(a != NULL);
@@ -3035,6 +3052,12 @@ public:
 // --------------------------
 // Shift Immediate Instructions
 // --------------------------
+  static uint16_t c_extract_slli(address instr) {
+    uint16_t low5 = Assembler::c_extract(((uint16_t*)instr)[0], 6, 2);
+    uint16_t high1 = Assembler::c_extract(((uint16_t*)instr)[0], 12, 12);
+    return (high1 << 5 | low5);
+  }
+
 #define INSN(NAME)                                                                           \
   void NAME(Register Rd, Register Rs1, unsigned shamt) {                                     \
     /* slli -> c.slli */                                                                     \

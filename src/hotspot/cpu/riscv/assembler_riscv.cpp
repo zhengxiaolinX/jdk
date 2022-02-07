@@ -296,9 +296,19 @@ void Assembler::movptr_with_offset(Register Rd, address addr, int32_t &offset) {
   addi(Rd, Rd, lower);
 
   // Load the rest 17 bits.
-  slli(Rd, Rd, 11);
+  if (UseRVC) {
+    c_slli(Rd, 11);
+  } else {
+    slli(Rd, Rd, 11);
+  }
+
   addi(Rd, Rd, (imm64 >> 6) & 0x7ff);
-  slli(Rd, Rd, 6);
+
+  if (UseRVC) {
+    c_slli(Rd, 6);
+  } else {
+    slli(Rd, Rd, 6);
+  }
 
   // This offset will be used by following jalr/ld.
   offset = imm64 & 0x3f;

@@ -1182,14 +1182,16 @@ static int patch_offset_in_pc_relative(address branch, int64_t offset) {
 }
 
 static int patch_addr_in_movptr(address branch, address target) {
-  const int MOVPTR_INSTRUCTIONS_NUM = 6;                                        // lui + addi + slli + addi + slli + addi/jalr/load
+  const int size = !UseRVC ?
+                   6 * NativeInstruction::instruction_size :
+                   4 * NativeInstruction::instruction_size + 2 * NativeInstruction::compressed_instruction_size;  // lui + addi + slli(C) + addi + slli(C) + addi/jalr/load
   int32_t lower = ((intptr_t)target << 35) >> 35;
   int64_t upper = ((intptr_t)target - lower) >> 29;
   Assembler::patch(branch + 0,  31, 12, upper & 0xfffff);                       // Lui.             target[48:29] + target[28] ==> branch[31:12]
   Assembler::patch(branch + 4,  31, 20, (lower >> 17) & 0xfff);                 // Addi.            target[28:17] ==> branch[31:20]
-  Assembler::patch(branch + 12, 31, 20, (lower >> 6) & 0x7ff);                  // Addi.            target[16: 6] ==> branch[31:20]
-  Assembler::patch(branch + 20, 31, 20, lower & 0x3f);                          // Addi/Jalr/Load.  target[ 5: 0] ==> branch[31:20]
-  return MOVPTR_INSTRUCTIONS_NUM * NativeInstruction::instruction_size;
+  Assembler::patch(branch + (!UseRVC ? 12 : 10), 31, 20, (lower >> 6) & 0x7ff); // Addi.            target[16: 6] ==> branch[31:20]
+  Assembler::patch(branch + (!UseRVC ? 20 : 16), 31, 20, lower & 0x3f);         // Addi/Jalr/Load.  target[ 5: 0] ==> branch[31:20]
+  return size;
 }
 
 static int patch_imm_in_li64(address branch, address target) {
@@ -1262,8 +1264,8 @@ static address get_target_of_movptr(address insn_addr) {
   assert_cond(insn_addr != NULL);
   intptr_t target_address = (((int64_t)Assembler::sextract(((unsigned*)insn_addr)[0], 31, 12)) & 0xfffff) << 29;    // Lui.
   target_address += ((int64_t)Assembler::sextract(((unsigned*)insn_addr)[1], 31, 20)) << 17;                        // Addi.
-  target_address += ((int64_t)Assembler::sextract(((unsigned*)insn_addr)[3], 31, 20)) << 6;                         // Addi.
-  target_address += ((int64_t)Assembler::sextract(((unsigned*)insn_addr)[5], 31, 20));                              // Addi/Jalr/Load.
+  target_address += ((int64_t)Assembler::sextract(((unsigned*)(insn_addr - (!UseRVC ? 0 : 2)))[3], 31, 20)) << 6;   // Addi.
+  target_address += ((int64_t)Assembler::sextract(((unsigned*)(insn_addr - (!UseRVC ? 0 : 4)))[5], 31, 20));        // Addi/Jalr/Load.
   return (address) target_address;
 }
 
@@ -1329,6 +1331,11 @@ address MacroAssembler::target_addr_for_insn(address insn_addr) {
   } else if (NativeInstruction::is_li32_at(insn_addr)) {             // li32
     return get_target_of_li32(insn_addr);
   } else {
+#ifdef ASSERT
+    tty->print_cr("target_addr_for_insn: instruction 0x%x at " INTPTR_FORMAT " could not be recognized!\n",
+                  *(unsigned*)insn_addr, p2i(insn_addr));
+    Disassembler::decode(insn_addr - 16, insn_addr + 16);
+#endif
     ShouldNotReachHere();
   }
   return address(((uintptr_t)insn_addr + offset));

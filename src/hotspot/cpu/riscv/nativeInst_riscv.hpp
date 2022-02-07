@@ -77,8 +77,15 @@ class NativeInstruction {
   static bool is_addi_at(address instr)       { assert_cond(instr != NULL); return extract_opcode(instr) == 0b0010011 && extract_funct3(instr) == 0b000; }
   static bool is_addiw_at(address instr)      { assert_cond(instr != NULL); return extract_opcode(instr) == 0b0011011 && extract_funct3(instr) == 0b000; }
   static bool is_lui_at(address instr)        { assert_cond(instr != NULL); return extract_opcode(instr) == 0b0110111; }
-  static bool is_slli_shift_at(address instr, uint32_t shift) {
+  static bool is_slli_shift_at(address instr, uint32_t shift) { int size = 0; return is_slli_shift_at(instr, shift, size); }
+  static bool is_slli_shift_at(address instr, uint32_t shift, int &size) {
     assert_cond(instr != NULL);
+    size = Assembler::instr_len(instr);
+    if (Assembler::is_compressed_instr(instr)) {
+      return Assembler::c_extract(((uint16_t*)instr)[0], 15, 13) == 0b000 &&
+             Assembler::c_extract(((uint16_t*)instr)[0], 1, 0) == 0b10 &&
+             Assembler::c_extract_slli(instr) == shift;
+    }
     return (extract_opcode(instr) == 0b0010011 && // opcode field
             extract_funct3(instr) == 0b001 &&     // funct3 field, select the type of operation
             Assembler::extract(((unsigned*)instr)[0], 25, 20) == shift);    // shamt field
@@ -90,20 +97,26 @@ class NativeInstruction {
   static uint32_t extract_opcode(address instr);
   static uint32_t extract_funct3(address instr);
 
+  // extract a RVC instruction
+  static Register c_extract_rs1_rd(address instr);    // extract 5-bit rs1/rd
+  static Register c_extract_rs2(address instr);       // extract 5-bit rs2
+  static Register c_extract_c_rs1_rd(address instr);  // extract 3-bit rs1/rd
+  static Register c_extract_c_rs2_rd(address instr);  // extract 3-bit rs2/rd
+
   // the instruction sequence of movptr is as below:
   //     lui
   //     addi
-  //     slli
+  //     slli(C)
   //     addi
-  //     slli
+  //     slli(C)
   //     addi/jalr/load
   static bool check_movptr_data_dependency(address instr) {
     address lui = instr;
     address addi1 = lui + instruction_size;
     address slli1 = addi1 + instruction_size;
-    address addi2 = slli1 + instruction_size;
+    address addi2 = slli1 + Assembler::instr_len(slli1);
     address slli2 = addi2 + instruction_size;
-    address last_instr = slli2 + instruction_size;
+    address last_instr = slli2 + Assembler::instr_len(slli2);
     return extract_rs1(addi1) == extract_rd(lui) &&
            extract_rs1(addi1) == extract_rd(addi1) &&
            extract_rs1(slli1) == extract_rd(addi1) &&
@@ -328,11 +341,21 @@ class NativeMovConstReg: public NativeInstruction {
  public:
   enum RISCV_specific_constants {
     movptr_instruction_size             =    6 * NativeInstruction::instruction_size, // lui, addi, slli, addi, slli, addi.  See movptr().
+    compressed_movptr_instruction_size  =    4 * NativeInstruction::instruction_size + 2 * NativeInstruction::compressed_instruction_size, // lui, addi, slli(C), addi, slli(C), addi. See movptr().
     movptr_with_offset_instruction_size =    5 * NativeInstruction::instruction_size, // lui, addi, slli, addi, slli. See movptr_with_offset().
+    compressed_movptr_with_offset_instruction_size = 3 * NativeInstruction::instruction_size + 2 * NativeInstruction::compressed_instruction_size, // lui, addi, slli(C), addi, slli(C). See movptr_with_offset().
     load_pc_relative_instruction_size   =    2 * NativeInstruction::instruction_size, // auipc, ld
     instruction_offset                  =    0,
     displacement_offset                 =    0
   };
+
+  static const int get_movptr_with_offset_instruction_size() {
+    return !UseRVC ? movptr_with_offset_instruction_size : compressed_movptr_with_offset_instruction_size;
+  }
+
+  static const int get_movptr_instruction_size() {
+    return !UseRVC ? movptr_instruction_size : compressed_movptr_instruction_size;
+  }
 
   address instruction_address() const       { return addr_at(instruction_offset); }
   address next_instruction_address() const  {
@@ -342,12 +365,12 @@ class NativeMovConstReg: public NativeInstruction {
     // However, when the instruction at 5 * instruction_size isn't addi,
     // the next instruction address should be addr_at(5 * instruction_size)
     if (nativeInstruction_at(instruction_address())->is_movptr()) {
-      if (is_addi_at(addr_at(movptr_with_offset_instruction_size))) {
+      if (is_addi_at(addr_at(get_movptr_with_offset_instruction_size()))) {
         // Assume: lui, addi, slli, addi, slli, addi
-        return addr_at(movptr_instruction_size);
+        return addr_at(get_movptr_instruction_size());
       } else {
         // Assume: lui, addi, slli, addi, slli
-        return addr_at(movptr_with_offset_instruction_size);
+        return addr_at(get_movptr_with_offset_instruction_size());
       }
     } else if (is_load_pc_relative_at(instruction_address())) {
       // Assume: auipc, ld
@@ -362,7 +385,7 @@ class NativeMovConstReg: public NativeInstruction {
 
   void flush() {
     if (!maybe_cpool_ref(instruction_address())) {
-      ICache::invalidate_range(instruction_address(), movptr_instruction_size);
+      ICache::invalidate_range(instruction_address(), get_movptr_instruction_size());
     }
   }
 
@@ -462,10 +485,16 @@ class NativeGeneralJump: public NativeJump {
 public:
   enum RISCV_specific_constants {
     instruction_size            =    6 * NativeInstruction::instruction_size, // lui, addi, slli, addi, slli, jalr
+    compressed_instruction_size =    4 * NativeInstruction::instruction_size + 2 * NativeInstruction::compressed_instruction_size, // lui, addi, slli(C), addi, slli(C), jalr
     instruction_offset          =    0,
     data_offset                 =    0,
-    next_instruction_offset     =    6 * NativeInstruction::instruction_size  // lui, addi, slli, addi, slli, jalr
+    next_instruction_offset     =    6 * NativeInstruction::instruction_size, // lui, addi, slli, addi, slli, jalr
+    compressed_next_instruction_offset = 4 * NativeInstruction::instruction_size + 2 * NativeInstruction::compressed_instruction_size // lui, addi, slli(C), addi, slli(C), jalr
   };
+
+  static const int get_instruction_size() {
+    return !UseRVC ? instruction_size : compressed_instruction_size;
+  }
 
   address jump_destination() const;
 

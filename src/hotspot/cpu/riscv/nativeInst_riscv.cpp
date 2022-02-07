@@ -41,17 +41,98 @@
 
 Register NativeInstruction::extract_rs1(address instr) {
   assert_cond(instr != NULL);
-  return as_Register(Assembler::extract(((unsigned*)instr)[0], 19, 15));
+  if (!Assembler::is_compressed_instr(instr)) {
+    // extracting a 4-byte instruction
+    return as_Register(Assembler::extract(((unsigned*)instr)[0], 19, 15));
+  }
+
+  // extracting a compressed 2-byte instruction
+  uint16_t op = Assembler::c_extract(((uint16_t*)instr)[0], 1, 0);
+  switch (op) {
+    case 0b00:
+      return c_extract_c_rs1_rd(instr);
+    case 0b01:
+      if (is_set_nth_bit(((uint16_t*)instr)[0], 15))
+        return c_extract_c_rs1_rd(instr);
+      else
+        return c_extract_rs1_rd(instr);
+    case 0b10:
+      return c_extract_rs1_rd(instr);
+    default:
+      ShouldNotReachHere();
+      return noreg;
+  }
 }
 
 Register NativeInstruction::extract_rs2(address instr) {
   assert_cond(instr != NULL);
-  return as_Register(Assembler::extract(((unsigned*)instr)[0], 24, 20));
+  if (!Assembler::is_compressed_instr(instr)) {
+    // extracting a 4-byte instruction
+    return as_Register(Assembler::extract(((unsigned*)instr)[0], 24, 20));
+  }
+
+  // extracting a compressed 2-byte instruction
+  uint16_t op = Assembler::c_extract(((uint16_t*)instr)[0], 1, 0);
+  switch (op) {
+    case 0b00:
+    case 0b01:
+      assert(is_set_nth_bit(((uint16_t*)instr)[0], 15), "only these instructions have rs2");
+      return c_extract_c_rs2_rd(instr);
+    case 0b10:
+      return c_extract_rs2(instr);
+    default:
+      ShouldNotReachHere();
+      return noreg;
+  }
 }
 
 Register NativeInstruction::extract_rd(address instr) {
   assert_cond(instr != NULL);
-  return as_Register(Assembler::extract(((unsigned*)instr)[0], 11, 7));
+  if (!Assembler::is_compressed_instr(instr)) {
+    // extracting a 4-byte instruction
+    return as_Register(Assembler::extract(((unsigned*)instr)[0], 11, 7));
+  }
+
+  // extracting a compressed 2-byte instruction
+  uint16_t op = Assembler::c_extract(((uint16_t*)instr)[0], 1, 0);
+  switch (op) {
+    case 0b00:
+      return c_extract_c_rs2_rd(instr);
+    case 0b01:
+      if (is_set_nth_bit(((uint16_t*)instr)[0], 15))
+        return c_extract_c_rs1_rd(instr);
+      else
+        return c_extract_rs1_rd(instr);
+    case 0b10:
+      return c_extract_rs1_rd(instr);
+    default:
+      ShouldNotReachHere();
+      return noreg;
+  }
+}
+
+Register NativeInstruction::c_extract_rs1_rd(address instr) {
+  assert_cond(instr != NULL);
+  assert (Assembler::is_compressed_instr(instr), "compressed instructions");
+  return as_Register(Assembler::extract(((uint16_t*)instr)[0], 11, 7));
+}
+
+Register NativeInstruction::c_extract_rs2(address instr) {
+  assert_cond(instr != NULL);
+  assert (Assembler::is_compressed_instr(instr), "compressed instructions");
+  return as_Register(Assembler::extract(((uint16_t*)instr)[0], 6, 2));
+}
+
+Register NativeInstruction::c_extract_c_rs1_rd(address instr) {
+  assert_cond(instr != NULL);
+  assert (Assembler::is_compressed_instr(instr), "compressed instructions");
+  return as_Register(Assembler::extract(((uint16_t*)instr)[0], 9, 7));
+}
+
+Register NativeInstruction::c_extract_c_rs2_rd(address instr) {
+  assert_cond(instr != NULL);
+  assert (Assembler::is_compressed_instr(instr), "compressed instructions");
+  return as_Register(Assembler::extract(((uint16_t*)instr)[0], 4, 2));
 }
 
 uint32_t NativeInstruction::extract_opcode(address instr) {
@@ -85,14 +166,14 @@ bool NativeInstruction::is_load_pc_relative_at(address instr) {
 }
 
 bool NativeInstruction::is_movptr_at(address instr) {
-  return is_lui_at(instr) && // Lui
-         is_addi_at(instr + instruction_size) && // Addi
-         is_slli_shift_at(instr + instruction_size * 2, 11) && // Slli Rd, Rs, 11
-         is_addi_at(instr + instruction_size * 3) && // Addi
-         is_slli_shift_at(instr + instruction_size * 4, 6) && // Slli Rd, Rs, 6
-         (is_addi_at(instr + instruction_size * 5) ||
-          is_jalr_at(instr + instruction_size * 5) ||
-          is_load_at(instr + instruction_size * 5)) && // Addi/Jalr/Load
+  address pos = instr;
+  int size = 0;
+  return is_lui_at(pos) && // Lui
+         is_addi_at(pos += instruction_size) && // Addi
+         is_slli_shift_at(pos += instruction_size, 11, size) && // Slli(C) Rd, Rs, 11
+         is_addi_at(pos += size) && // Addi
+         is_slli_shift_at(pos += instruction_size, 6, size) && // Slli(C) Rd, Rs, 6
+         (is_addi_at(pos += size) || is_jalr_at(pos) || is_load_at(pos)) && // Addi/Jalr/Load
          check_movptr_data_dependency(instr);
 }
 
@@ -388,7 +469,7 @@ void NativeJump::patch_verified_entry(address entry, address verified_entry, add
 }
 
 void NativeGeneralJump::insert_unconditional(address code_pos, address entry) {
-  CodeBuffer cb(code_pos, instruction_size);
+  CodeBuffer cb(code_pos, get_instruction_size());
   MacroAssembler a(&cb);
   Assembler::IncompressibleRegion ir(&a);  // Fixed length: see NativeGeneralJump::get_instruction_size()
 
@@ -396,7 +477,7 @@ void NativeGeneralJump::insert_unconditional(address code_pos, address entry) {
   a.movptr_with_offset(t0, entry, offset); // lui, addi, slli, addi, slli
   a.jalr(x0, t0, offset); // jalr
 
-  ICache::invalidate_range(code_pos, instruction_size);
+  ICache::invalidate_range(code_pos, get_instruction_size());
 }
 
 // MT-safe patching of a long jump instruction.

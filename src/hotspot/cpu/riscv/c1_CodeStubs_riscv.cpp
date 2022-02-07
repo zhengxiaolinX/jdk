@@ -248,7 +248,7 @@ void MonitorExitStub::emit_code(LIR_Assembler* ce) {
 // - in runtime: preserve all registers (rspecially objects, i.e., source and destination object)
 // - in runtime: after initializing class, restore original code, reexecute instruction
 
-int PatchingStub::_patch_info_offset = -NativeGeneralJump::instruction_size;
+int PatchingStub::_patch_info_offset = -NativeGeneralJump::get_instruction_size();
 
 void PatchingStub::align_patch_site(MacroAssembler* masm) {}
 
