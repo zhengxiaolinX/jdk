@@ -249,6 +249,8 @@ class InternalAddress: public Address {
   ~InternalAddress() {}
 };
 
+#include "assembler_rvc_histogram.hpp"
+
 class Assembler : public AbstractAssembler {
 public:
 
@@ -259,6 +261,13 @@ public:
 
   // instruction must start at passed address
   static bool is_compressed_instr(address instr) {
+    return instr_len(instr) == compressed_instruction_size;
+  }
+
+  //---<  calculate length of instruction  >---
+  // We just use the values set above.
+  // instruction must start at passed address
+  static unsigned int instr_len(address instr) {
     // The RISC-V ISA Manual, Section 'Base Instruction-Length Encoding':
     // Instructions are stored in memory as a sequence of 16-bit little-endian parcels, regardless of
     // memory system endianness. Parcels forming one instruction are stored at increasing halfword
@@ -266,17 +275,20 @@ public:
     // specification.
     if (UseRVC && (((uint16_t *)instr)[0] & 0b11) != 0b11) {
       // 16-bit instructions have their lowest two bits equal to 0b00, 0b01, or 0b10
-      return true;
+      return compressed_instruction_size;
     }
-    // 32-bit instructions have their lowest two bits set to 0b11
-    return false;
-  }
 
-  //---<  calculate length of instruction  >---
-  // We just use the values set above.
-  // instruction must start at passed address
-  static unsigned int instr_len(address instr) {
-    return is_compressed_instr(instr) ? compressed_instruction_size : instruction_size;
+    if ((((uint16_t *)instr)[0] & 0x1f) != 0x1f) {
+      // 32-bit instructions have their lowest two bits set to 0b11
+      return instruction_size;
+    }
+    if ((((uint16_t *)instr)[0] & 0x3f) == 0x1f) {
+      return 6;
+    }
+    if ((((uint16_t *)instr)[0] & 0x7f) == 0x3f) {
+      return 8;
+    }
+    return 2;
   }
 
   //---<  longest instructions  >---
@@ -390,6 +402,7 @@ public:
   }
 
   void emit(unsigned insn) {
+    RVCCalculator::total_atomic_add_one(code_section()->scratch_emit());
     emit_int32((jint)insn);
   }
 
@@ -2241,9 +2254,21 @@ public:
 
 // --------------  RVC Instruction Definitions  --------------
 
-  void c_nop() {
-    c_addi(x0, 0);
+#define INSN(NAME, funct3, op)                                                               \
+  void NAME() {                                                                              \
+    uint16_t insn = 0;                                                                       \
+    c_patch((address)&insn, 1, 0, op);                                                       \
+    c_patch((address)&insn, 6, 2, 0b00000);                                                  \
+    c_patch_reg((address)&insn, 7, x0);                                                      \
+    c_patch((address)&insn, 12, 12, 0b0);                                                    \
+    c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
+    emit_int16(insn);                                                                        \
   }
+
+  INSN(c_nop,   0b000, 0b01);
+
+#undef INSN
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd_Rs1, int32_t imm) {                                                  \
@@ -2254,6 +2279,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd_Rs1);                                                  \
     c_patch((address)&insn, 12, 12, (imm & nth_bit(5)) >> 5);                                \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2276,6 +2302,7 @@ public:
     c_patch_reg((address)&insn, 7, sp);                                                      \
     c_patch((address)&insn, 12, 12, (imm & nth_bit(9)) >> 9);                                \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2296,6 +2323,7 @@ public:
     c_patch((address)&insn, 10, 7, (uimm & right_n_bits(10)) >> 6);                          \
     c_patch((address)&insn, 12, 11, (uimm & right_n_bits(6)) >> 4);                          \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2314,6 +2342,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd_Rs1);                                                  \
     c_patch((address)&insn, 12, 12, (shamt & nth_bit(5)) >> 5);                              \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2332,6 +2361,7 @@ public:
     c_patch((address)&insn, 11, 10, funct2);                                                 \
     c_patch((address)&insn, 12, 12, (shamt & nth_bit(5)) >> 5);                              \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2350,6 +2380,7 @@ public:
     c_patch((address)&insn, 11, 10, funct2);                                                 \
     c_patch((address)&insn, 12, 12, (imm & nth_bit(5)) >> 5);                                \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2365,6 +2396,7 @@ public:
     c_patch((address)&insn, 6, 5, funct2);                                                   \
     c_patch_compressed_reg((address)&insn, 7, Rd_Rs1);                                       \
     c_patch((address)&insn, 15, 10, funct6);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2385,6 +2417,7 @@ public:
     c_patch_reg((address)&insn, 2, Rs2);                                                     \
     c_patch_reg((address)&insn, 7, Rd_Rs1);                                                  \
     c_patch((address)&insn, 15, 12, funct4);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2401,6 +2434,7 @@ public:
     c_patch_reg((address)&insn, 2, x0);                                                      \
     c_patch_reg((address)&insn, 7, Rs1);                                                     \
     c_patch((address)&insn, 15, 12, funct4);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2444,6 +2478,7 @@ public:
     c_patch((address)&insn, 11, 11, (offset & nth_bit(4)) >> 4);                             \
     c_patch((address)&insn, 12, 12, (offset & nth_bit(11)) >> 11);                           \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }                                                                                          \
   void NAME(address dest) {                                                                  \
@@ -2472,6 +2507,7 @@ public:
     c_patch((address)&insn, 11, 10, (imm & right_n_bits(5)) >> 3);                           \
     c_patch((address)&insn, 12, 12, (imm & nth_bit(8)) >> 8);                                \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }                                                                                          \
   void NAME(Register Rs1, address dest) {                                                    \
@@ -2501,6 +2537,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd);                                                      \
     c_patch((address)&insn, 12, 12, (imm & nth_bit(17)) >> 17);                              \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2518,6 +2555,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd);                                                      \
     c_patch((address)&insn, 12, 12, (imm & right_n_bits(6)) >> 5);                           \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2537,6 +2575,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd);                                                      \
     c_patch((address)&insn, 12, 12, (uimm & nth_bit(5)) >> 5);                               \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2555,6 +2594,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd);                                                      \
     c_patch((address)&insn, 12, 12, (uimm & nth_bit(5)) >> 5);                               \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2573,6 +2613,7 @@ public:
     c_patch_compressed_reg((address)&insn, 7, Rs1);                                          \
     c_patch((address)&insn, 12, 10, (uimm & right_n_bits(6)) >> 3);                          \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2593,6 +2634,7 @@ public:
     c_patch((address)&insn, 9, 7, (uimm & right_n_bits(9)) >> 6);                            \
     c_patch((address)&insn, 12, 10, (uimm & right_n_bits(6)) >> 3);                          \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2611,6 +2653,7 @@ public:
     c_patch((address)&insn, 8, 7, (uimm & right_n_bits(8)) >> 6);                            \
     c_patch((address)&insn, 12, 9, (uimm & right_n_bits(6)) >> 2);                           \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2630,6 +2673,7 @@ public:
     c_patch_reg((address)&insn, 7, Rd);                                                      \
     c_patch((address)&insn, 12, 12, (uimm & nth_bit(5)) >> 5);                               \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2649,6 +2693,7 @@ public:
     c_patch_compressed_reg((address)&insn, 7, Rs1);                                          \
     c_patch((address)&insn, 12, 10, (uimm & right_n_bits(6)) >> 3);                          \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2664,6 +2709,7 @@ public:
     c_patch((address)&insn, 11, 2, 0x0);                                                     \
     c_patch((address)&insn, 12, 12, 0b1);                                                    \
     c_patch((address)&insn, 15, 13, funct3);                                                 \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     emit_int16(insn);                                                                        \
   }
 
@@ -2686,6 +2732,7 @@ public:
         return;                                                                                \
       }                                                                                        \
     }                                                                                          \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _add(Rd, Rs1, Rs2);                                                                        \
   }
 
@@ -2702,6 +2749,7 @@ public:
       C_NAME(Rd, Rs2);                                                                       \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     NORMAL_NAME(Rd, Rs1, Rs2);                                                               \
   }
 
@@ -2722,6 +2770,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     NORMAL_NAME(Rd, Rs1, Rs2);                                                               \
   }
 
@@ -2792,6 +2841,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _lw(Rd, Rs, offset);                                                                     \
   }
 
@@ -2812,6 +2862,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _ld(Rd, Rs, offset);                                                                     \
   }
 
@@ -2832,6 +2883,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _fld(Rd, Rs, offset);                                                                    \
   }
 
@@ -2852,6 +2904,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _sd(Rd, Rs, offset);                                                                     \
   }
 
@@ -2872,6 +2925,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _sw(Rd, Rs, offset);                                                                     \
   }
 
@@ -2892,6 +2946,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _fsd(Rd, Rs, offset);                                                                    \
   }
 
@@ -2911,6 +2966,7 @@ public:
       C_NAME(Rs1, offset);                                                                   \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     NORMAL_NAME(Rs1, Rs2, offset);                                                           \
   }
 
@@ -2929,6 +2985,7 @@ public:
       c_j(offset);                                                                           \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _jal(Rd, offset);                                                                        \
   }
 
@@ -2949,6 +3006,7 @@ public:
         return;                                                                              \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _jalr(Rd, Rs, offset);                                                                   \
   }
 
@@ -2966,6 +3024,7 @@ public:
       c_ebreak();                                                      \
       return;                                                          \
     }                                                                  \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _ebreak();                                                         \
   }
 
@@ -2983,6 +3042,7 @@ public:
       c_li(Rd, imm);                                                                         \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _li(Rd, imm);                                                                            \
   }
 
@@ -2996,7 +3056,7 @@ public:
     /* addi -> c.addi/c.nop/c.mv/c.addi16sp/c.addi4spn */                                    \
     if (do_compress()) {                                                                     \
       if (Rd == Rs1 && is_imm_in_range(imm, 6, 0)) {                                         \
-        c_addi(Rd, imm);                                                                     \
+        if (imm == 0) { c_nop(); } else { c_addi(Rd, imm); }                                 \
         return;                                                                              \
       } else if (imm == 0 && Rd != x0 && Rs1 != x0) {                                        \
         c_mv(Rd, Rs1);                                                                       \
@@ -3011,6 +3071,7 @@ public:
         }                                                                                    \
       }                                                                                      \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _addi(Rd, Rs1, imm);                                                                     \
   }
 
@@ -3026,6 +3087,7 @@ public:
       c_addiw(Rd, imm);                                                                      \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _addiw(Rd, Rs1, imm);                                                                    \
   }
 
@@ -3042,6 +3104,7 @@ public:
       c_andi(Rd, imm);                                                                       \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _and_imm12(Rd, Rs1, imm);                                                                \
   }
 
@@ -3065,6 +3128,7 @@ public:
       c_slli(Rd, shamt);                                                                     \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _slli(Rd, Rs1, shamt);                                                                   \
   }
 
@@ -3080,6 +3144,7 @@ public:
       C_NAME(Rd, shamt);                                                                     \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     NORMAL_NAME(Rd, Rs1, shamt);                                                             \
   }
 
@@ -3098,6 +3163,7 @@ public:
       c_lui(Rd, imm);                                                                        \
       return;                                                                                \
     }                                                                                        \
+    RVCCalculator::atomic_add_one(RVCCalculator::NAME, code_section()->scratch_emit());      \
     _lui(Rd, imm);                                                                           \
   }
 

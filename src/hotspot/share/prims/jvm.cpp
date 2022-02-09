@@ -441,6 +441,7 @@ JVM_END
 
 
 JVM_ENTRY_NO_ENV(void, JVM_Halt(jint code))
+  RISCV64_ONLY(RVCCalculator::print();)
   before_exit(thread, true);
   vm_exit(code);
 JVM_END
