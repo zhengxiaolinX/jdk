@@ -1514,6 +1514,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   Label lock_done;
 
   if (method->is_synchronized()) {
+    Label count;
 
     const int mark_word_offset = BasicLock::displaced_header_offset_in_bytes();
 
@@ -1536,10 +1537,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
       __ sd(swap_reg, Address(lock_reg, mark_word_offset));
 
       // src -> dest if dest == x10 else x10 <- dest
-      {
-        Label here;
-        __ cmpxchg_obj_header(x10, lock_reg, obj_reg, t0, lock_done, /*fallthrough*/NULL);
-      }
+      __ cmpxchg_obj_header(x10, lock_reg, obj_reg, t0, count, /*fallthrough*/NULL);
 
       // Test if the oopMark is an obvious stack pointer, i.e.,
       //  1) (mark & 3) == 0, and
@@ -1559,6 +1557,9 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     } else {
       __ j(slow_path_lock);
     }
+
+    __ bind(count);
+    __ increment(Address(xthread, JavaThread::held_monitor_count_offset()));
 
     // Slow path will re-enter here
     __ bind(lock_done);
@@ -1645,14 +1646,17 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     // Get locked oop from the handle we passed to jni
     __ ld(obj_reg, Address(oop_handle_reg, 0));
 
-    Label done;
+    Label done, not_recursive;
 
     if (!UseHeavyMonitors) {
       // Simple recursive lock?
       __ ld(t0, Address(sp, lock_slot_offset * VMRegImpl::stack_slot_size));
-      __ beqz(t0, done);
+      __ bnez(t0, not_recursive);
+      __ decrement(Address(xthread, JavaThread::held_monitor_count_offset()));
+      __ j(done);
     }
 
+    __ bind(not_recursive);
 
     // Must save x10 if if it is live now because cmpxchg must use it
     if (ret_type != T_FLOAT && ret_type != T_DOUBLE && ret_type != T_VOID) {
@@ -1666,9 +1670,10 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
       __ ld(old_hdr, Address(x10, 0));
 
       // Atomic swap old header if oop still contains the stack lock
-      Label succeed;
-      __ cmpxchg_obj_header(x10, old_hdr, obj_reg, t0, succeed, &slow_path_unlock);
-      __ bind(succeed);
+      Label count;
+      __ cmpxchg_obj_header(x10, old_hdr, obj_reg, t0, count, &slow_path_unlock);
+      __ bind(count);
+      __ decrement(Address(xthread, JavaThread::held_monitor_count_offset()));
     } else {
       __ j(slow_path_unlock);
     }

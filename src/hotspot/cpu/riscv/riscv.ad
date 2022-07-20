@@ -2332,6 +2332,7 @@ encode %{
     Register tmp = as_Register($tmp2$$reg);
     Label cont;
     Label object_has_monitor;
+    Label no_count;
 
     assert_different_registers(oop, box, tmp, disp_hdr, t0);
 
@@ -2410,10 +2411,18 @@ encode %{
     // Recursive lock case
     __ mv(flag, zr);
     __ ld(tmp, Address(disp_hdr, ObjectMonitor::recursions_offset_in_bytes() - markWord::monitor_value));
-    __ add(tmp, tmp, 1u);
+    __ add(tmp, tmp, 1);
     __ sd(tmp, Address(disp_hdr, ObjectMonitor::recursions_offset_in_bytes() - markWord::monitor_value));
 
     __ bind(cont);
+
+    __ bnez(flag, no_count);
+
+    __ ld(tmp, Address(xthread, JavaThread::held_monitor_count_offset()));
+    __ add(tmp, tmp, 1);
+    __ sd(tmp, Address(xthread, JavaThread::held_monitor_count_offset()));
+
+    __ bind(no_count);
   %}
 
   // using cr flag to indicate the fast_unlock result: 0 for success; others failed.
@@ -2426,6 +2435,7 @@ encode %{
     Register tmp = as_Register($tmp2$$reg);
     Label cont;
     Label object_has_monitor;
+    Label no_count;
 
     assert_different_registers(oop, box, tmp, disp_hdr, flag);
 
@@ -2484,6 +2494,14 @@ encode %{
     __ sd(zr, Address(tmp)); // set unowned
 
     __ bind(cont);
+
+    __ bnez(flag, no_count);
+
+    __ ld(tmp, Address(xthread, JavaThread::held_monitor_count_offset()));
+    __ sub(tmp, tmp, 1);
+    __ sd(tmp, Address(xthread, JavaThread::held_monitor_count_offset()));
+
+    __ bind(no_count);
   %}
 
   // arithmetic encodings
