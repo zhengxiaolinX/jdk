@@ -157,6 +157,12 @@ bool frame::safe_for_sender(JavaThread *thread) {
       saved_fp = (intptr_t*) *(sender_sp - 2);
     }
 
+    if (Continuation::is_return_barrier_entry(sender_pc)) {
+      // If our sender_pc is the return barrier, then our "real" sender is the continuation entry
+      frame s = Continuation::continuation_bottom_sender(thread, *this, sender_sp);
+      sender_sp = s.sp();
+      sender_pc = s.pc();
+    }
 
     // If the potential sender is the interpreter then we can do some more checking
     if (Interpreter::contains(sender_pc)) {
@@ -279,10 +285,6 @@ void frame::patch_pc(Thread* thread, address pc) {
   } else {
     _deopt_state = not_deoptimized;
   }
-}
-
-bool frame::is_interpreted_frame() const  {
-  return Interpreter::contains(pc());
 }
 
 intptr_t* frame::entry_frame_argument_at(int offset) const {
