@@ -27,8 +27,11 @@
 #ifndef CPU_RISCV_FRAME_RISCV_INLINE_HPP
 #define CPU_RISCV_FRAME_RISCV_INLINE_HPP
 
-#include "code/codeCache.hpp"
+#include "code/codeBlob.inline.hpp"
+#include "code/codeCache.inline.hpp"
 #include "code/vmreg.inline.hpp"
+#include "interpreter/interpreter.hpp"
+#include "interpreter/oopMapCache.hpp"
 #include "runtime/sharedRuntime.hpp"
 
 // Inline functions for RISCV frames:
@@ -86,6 +89,48 @@ inline frame::frame(intptr_t* ptr_sp, intptr_t* ptr_fp, address pc) {
   init(ptr_sp, ptr_fp, pc);
 }
 
+inline frame::frame(intptr_t* ptr_sp, intptr_t* unextended_sp, intptr_t* ptr_fp, address pc, CodeBlob* cb) {
+  intptr_t a = intptr_t(ptr_sp);
+  intptr_t b = intptr_t(ptr_fp);
+  _sp = ptr_sp;
+  _unextended_sp = unextended_sp;
+  _fp = ptr_fp;
+  _pc = pc;
+  assert(pc != NULL, "no pc?");
+  _cb = cb;
+  _oop_map = NULL;
+  assert(_cb != NULL, "pc: " INTPTR_FORMAT, p2i(pc));
+  _on_heap = false;
+  DEBUG_ONLY(_frame_index = -1;)
+  setup(pc);
+}
+
+inline frame::frame(intptr_t* ptr_sp, intptr_t* unextended_sp, intptr_t* ptr_fp, address pc, CodeBlob* cb,
+                    const ImmutableOopMap* oop_map, bool on_heap) {
+  _sp = ptr_sp;
+  _unextended_sp = unextended_sp;
+  _fp = ptr_fp;
+  _pc = pc;
+  _cb = cb;
+  _oop_map = oop_map;
+  _deopt_state = not_deoptimized;
+  _on_heap = on_heap;
+  DEBUG_ONLY(_frame_index = -1;)
+
+  // In thaw, non-heap frames use this constructor to pass oop_map.  I don't know why.
+  assert(_on_heap || _cb != nullptr, "these frames are always heap frames");
+  if (cb != NULL) {
+    setup(pc);
+  }
+#ifdef ASSERT
+  // The following assertion has been disabled because it would sometime trap for Continuation.run,
+  // which is not *in* a continuation and therefore does not clear the _cont_fastpath flag, but this
+  // is benign even in fast mode (see Freeze::setup_jump)
+  // We might freeze deoptimized frame in slow mode
+  // assert(_pc == pc && _deopt_state == not_deoptimized, "");
+#endif
+}
+
 inline frame::frame(intptr_t* ptr_sp, intptr_t* unextended_sp, intptr_t* ptr_fp, address pc) {
   intptr_t a = intptr_t(ptr_sp);
   intptr_t b = intptr_t(ptr_fp);
@@ -94,7 +139,8 @@ inline frame::frame(intptr_t* ptr_sp, intptr_t* unextended_sp, intptr_t* ptr_fp,
   _fp = ptr_fp;
   _pc = pc;
   assert(pc != NULL, "no pc?");
-  _cb = CodeCache::find_blob(pc);
+  _cb = CodeCache::find_blob_fast(pc);
+  assert(_cb != NULL, "pc: " INTPTR_FORMAT " sp: " INTPTR_FORMAT " unextended_sp: " INTPTR_FORMAT " fp: " INTPTR_FORMAT, p2i(pc), p2i(ptr_sp), p2i(unextended_sp), p2i(ptr_fp));
   _oop_map = NULL;
   _on_heap = false;
   DEBUG_ONLY(_frame_index = -1;)
@@ -102,9 +148,7 @@ inline frame::frame(intptr_t* ptr_sp, intptr_t* unextended_sp, intptr_t* ptr_fp,
   setup(pc);
 }
 
-inline frame::frame(intptr_t* ptr_sp) {
-  Unimplemented();
-}
+inline frame::frame(intptr_t* ptr_sp) : frame(ptr_sp, ptr_sp, *(intptr_t**)(ptr_sp - frame::sender_sp_offset), *(address*)(ptr_sp - 1)) {}
 
 inline frame::frame(intptr_t* ptr_sp, intptr_t* ptr_fp) {
   intptr_t a = intptr_t(ptr_sp);
@@ -113,6 +157,8 @@ inline frame::frame(intptr_t* ptr_sp, intptr_t* ptr_fp) {
   _unextended_sp = ptr_sp;
   _fp = ptr_fp;
   _pc = (address)(ptr_sp[-1]);
+  _on_heap = false;
+  DEBUG_ONLY(_frame_index = -1;)
 
   // Here's a sticky one. This constructor can be called via AsyncGetCallTrace
   // when last_Java_sp is non-null but the pc fetched is junk. If we are truly
@@ -134,9 +180,6 @@ inline frame::frame(intptr_t* ptr_sp, intptr_t* ptr_fp) {
   } else {
     _deopt_state = not_deoptimized;
   }
-
-  _on_heap = false;
-  DEBUG_ONLY(_frame_index = -1;)
 }
 
 // Accessors
