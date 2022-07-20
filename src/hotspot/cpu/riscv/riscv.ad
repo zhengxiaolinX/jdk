@@ -2274,12 +2274,14 @@ encode %{
         return;
       }
     }
+    __ post_call_nop();
   %}
 
   enc_class riscv_enc_java_dynamic_call(method meth) %{
     C2_MacroAssembler _masm(&cbuf);
     int method_index = resolved_method_index(cbuf);
     address call = __ ic_call((address)$meth$$method, method_index);
+    __ post_call_nop();
     if (call == NULL) {
       ciEnv::current()->record_failure("CodeCache is full");
       return;
@@ -2305,6 +2307,7 @@ encode %{
     CodeBlob *cb = CodeCache::find_blob(entry);
     if (cb != NULL) {
       address call = __ trampoline_call(Address(entry, relocInfo::runtime_call_type));
+      __ post_call_nop();
       if (call == NULL) {
         ciEnv::current()->record_failure("CodeCache is full");
         return;
@@ -2318,6 +2321,7 @@ encode %{
       __ sd(t1, Address(sp, wordSize));
       __ jalr(t0);
       __ bind(retaddr);
+      __ post_call_nop();
       __ addi(sp, sp, 2 * wordSize);
     }
   %}

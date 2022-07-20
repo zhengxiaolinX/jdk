@@ -52,6 +52,9 @@ class MacroAssembler: public Assembler {
   // Alignment
   void align(int modulus, int extra_offset = 0);
 
+  // nop
+  void post_call_nop() { nop(); };
+
   // Stack frame creation/removal
   // Note that SP must be updated to the right place before saving/restoring RA and FP
   // because signal based thread suspend/resume could happen asynchronously.

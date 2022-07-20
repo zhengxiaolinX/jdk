@@ -265,15 +265,18 @@ bool frame::safe_for_sender(JavaThread *thread) {
 void frame::patch_pc(Thread* thread, address pc) {
   assert(_cb == CodeCache::find_blob(pc), "unexpected pc");
   address* pc_addr = &(((address*) sp())[-1]);
+  address pc_old = *pc_addr;
 
   if (TracePcPatching) {
     tty->print_cr("patch_pc at address " INTPTR_FORMAT " [" INTPTR_FORMAT " -> " INTPTR_FORMAT "]",
-                  p2i(pc_addr), p2i(*pc_addr), p2i(pc));
+                  p2i(pc_addr), p2i(pc_old), p2i(pc));
   }
+
+  assert(!Continuation::is_return_barrier_entry(pc_old), "return barrier");
 
   // Either the return address is the original one or we are going to
   // patch in the same address that's already there.
-  assert(_pc == *pc_addr || pc == *pc_addr || *pc_addr == 0, "must be");
+  assert(_pc == pc_old || pc == pc_old || pc_old == 0, "must be");
   DEBUG_ONLY(address old_pc = _pc;)
   *pc_addr = pc;
   _pc = pc; // must be set before call to get_deopt_original_pc
