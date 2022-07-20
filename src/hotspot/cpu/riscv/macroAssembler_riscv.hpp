@@ -515,6 +515,9 @@ class MacroAssembler: public Assembler {
   void push_CPU_state(bool save_vectors = false, int vector_size_in_bytes = 0);
   void pop_CPU_state(bool restore_vectors = false, int vector_size_in_bytes = 0);
 
+  void push_cont_fastpath(Register java_thread);
+  void pop_cont_fastpath(Register java_thread);
+
   // if heap base register is used - reinit it with the correct value
   void reinit_heapbase();
 

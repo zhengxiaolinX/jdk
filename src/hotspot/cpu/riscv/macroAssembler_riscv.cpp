@@ -88,6 +88,24 @@ static void pass_arg3(MacroAssembler* masm, Register arg) {
   }
 }
 
+void MacroAssembler::push_cont_fastpath(Register java_thread) {
+  if (!Continuations::enabled()) return;
+  Label done;
+  ld(t0, Address(java_thread, JavaThread::cont_fastpath_offset()));
+  bleu(sp, t0, done);
+  sd(sp, Address(java_thread, JavaThread::cont_fastpath_offset()));
+  bind(done);
+}
+
+void MacroAssembler::pop_cont_fastpath(Register java_thread) {
+  if (!Continuations::enabled()) return;
+  Label done;
+  ld(t0, Address(java_thread, JavaThread::cont_fastpath_offset()));
+  bltu(sp, t0, done);
+  sd(zr, Address(java_thread, JavaThread::cont_fastpath_offset()));
+  bind(done);
+}
+
 void MacroAssembler::align(int modulus, int extra_offset) {
   CompressibleRegion cr(this);
   while ((offset() + extra_offset) % modulus != 0) { nop(); }
