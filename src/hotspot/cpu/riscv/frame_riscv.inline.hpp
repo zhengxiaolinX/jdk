@@ -320,13 +320,11 @@ inline intptr_t* frame::interpreter_frame_expression_stack() const {
 // Entry frames
 
 inline JavaCallWrapper** frame::entry_frame_call_wrapper_addr() const {
- return (JavaCallWrapper**)addr_at(entry_frame_call_wrapper_offset);
+  return (JavaCallWrapper**)addr_at(entry_frame_call_wrapper_offset);
 }
 
 
 // Compiled frames
-PRAGMA_DIAG_PUSH
-PRAGMA_NONNULL_IGNORED
 inline oop frame::saved_oop_result(RegisterMap* map) const {
   oop* result_adr = (oop *)map->location(x10->as_VMReg(), nullptr);
   guarantee(result_adr != NULL, "bad register save location");
@@ -338,7 +336,6 @@ inline void frame::set_saved_oop_result(RegisterMap* map, oop obj) {
   guarantee(result_adr != NULL, "bad register save location");
   *result_adr = obj;
 }
-PRAGMA_DIAG_POP
 
 inline bool frame::is_interpreted_frame() const {
   return Interpreter::contains(pc());
