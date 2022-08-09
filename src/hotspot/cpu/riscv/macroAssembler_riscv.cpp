@@ -205,6 +205,15 @@ void MacroAssembler::call_VM(Register oop_result,
   call_VM(oop_result, last_java_sp, entry_point, 3, check_exceptions);
 }
 
+void MacroAssembler::post_call_nop() {
+  if (!Continuations::enabled()) {
+    return;
+  }
+  InstructionMark im(this);
+  relocate(post_call_nop_Relocation::spec());
+  nop();
+}
+
 // these are no-ops overridden by InterpreterMacroAssembler
 void MacroAssembler::check_and_handle_earlyret(Register java_thread) {}
 void MacroAssembler::check_and_handle_popframe(Register java_thread) {}

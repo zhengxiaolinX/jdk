@@ -50,7 +50,7 @@ class MacroAssembler: public Assembler {
   void align(int modulus, int extra_offset = 0);
 
   // nop
-  void post_call_nop() { nop(); };
+  void post_call_nop();
 
   // Stack frame creation/removal
   // Note that SP must be updated to the right place before saving/restoring RA and FP
