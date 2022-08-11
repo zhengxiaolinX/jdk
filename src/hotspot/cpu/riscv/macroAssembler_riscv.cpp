@@ -2858,43 +2858,30 @@ void  MacroAssembler::set_narrow_klass(Register dst, Klass* k) {
 
 // Maybe emit a call via a trampoline. If the code cache is small
 // trampolines won't be emitted.
-address MacroAssembler::trampoline_call(Address entry, CodeBuffer* cbuf,
-                                        bool check_emit_size) {
-  assert(JavaThread::current()->is_Compiler_thread(), "just checking");
+address MacroAssembler::trampoline_call(Address entry, CodeBuffer* cbuf) {
   assert(entry.rspec().type() == relocInfo::runtime_call_type ||
          entry.rspec().type() == relocInfo::opt_virtual_call_type ||
          entry.rspec().type() == relocInfo::static_call_type ||
          entry.rspec().type() == relocInfo::virtual_call_type, "wrong reloc type");
 
+  address target = entry.target();
+
   // We need a trampoline if branches are far.
   if (far_branches()) {
-    bool in_scratch_emit_size = false;
-#ifdef COMPILER2
-    if (check_emit_size) {
-      // We don't want to emit a trampoline if C2 is generating dummy
-      // code during its branch shortening phase.
-      CompileTask* task = ciEnv::current()->task();
-      in_scratch_emit_size =
-        (task != NULL && is_c2_compile(task->comp_level()) &&
-         Compile::current()->output()->in_scratch_emit_size());
-    }
-#endif
-    if (!in_scratch_emit_size) {
-      address stub = emit_trampoline_stub(offset(), entry.target());
+    if (!in_scratch_emit_size()) {
+      address stub = emit_trampoline_stub(offset(), target);
       if (stub == NULL) {
         postcond(pc() == badAddress);
         return NULL; // CodeCache is full
       }
     }
+    target = pc();
   }
 
   if (cbuf != NULL) { cbuf->set_insts_mark(); }
   relocate(entry.rspec());
-  if (!far_branches()) {
-    jal(entry.target());
-  } else {
-    jal(pc());
-  }
+  jal(target);
+
   // just need to return a non-null address
   postcond(pc() != badAddress);
   return pc();
