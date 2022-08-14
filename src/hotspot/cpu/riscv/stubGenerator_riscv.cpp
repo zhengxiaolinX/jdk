@@ -38,6 +38,8 @@
 #include "oops/objArrayKlass.hpp"
 #include "oops/oop.inline.hpp"
 #include "prims/methodHandles.hpp"
+#include "runtime/continuation.hpp"
+#include "runtime/continuationEntry.inline.hpp"
 #include "runtime/frame.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/javaThread.hpp"
@@ -67,6 +69,10 @@
 #endif
 
 #define BIND(label) bind(label); BLOCK_COMMENT(#label ":")
+
+OopMap* continuation_enter_setup(MacroAssembler* masm, int& stack_slots);
+void fill_continuation_entry(MacroAssembler* masm);
+void continuation_enter_cleanup(MacroAssembler* masm);
 
 // Stub Code definitions
 
@@ -3919,3 +3925,73 @@ void StubGenerator_generate(CodeBuffer* code, int phase) {
 
   StubGenerator g(code, phase);
 }
+
+
+#undef __
+#define __ masm->
+
+// on exit, sp points to the ContinuationEntry
+OopMap* continuation_enter_setup(MacroAssembler* masm, int& stack_slots) {
+  assert(ContinuationEntry::size() % VMRegImpl::stack_slot_size == 0, "");
+  assert(in_bytes(ContinuationEntry::cont_offset())  % VMRegImpl::stack_slot_size == 0, "");
+  assert(in_bytes(ContinuationEntry::chunk_offset()) % VMRegImpl::stack_slot_size == 0, "");
+
+  stack_slots += (int)ContinuationEntry::size() / wordSize;
+  __ sub(sp, sp, (int)ContinuationEntry::size()); // place Continuation metadata
+
+  OopMap* map = new OopMap(((int)ContinuationEntry::size() + wordSize) / VMRegImpl::stack_slot_size, 0 /* arg_slots*/);
+  ContinuationEntry::setup_oopmap(map);
+
+  __ ld(t0, Address(xthread, JavaThread::cont_entry_offset()));
+  __ sd(t0, Address(sp, ContinuationEntry::parent_offset()));
+  __ sd(sp, Address(xthread, JavaThread::cont_entry_offset()));
+
+  return map;
+}
+
+// on entry c_rarg1 points to the continuation
+//          sp points to ContinuationEntry
+//          c_rarg3 -- isVirtualThread
+void fill_continuation_entry(MacroAssembler* masm) {
+#ifdef ASSERT
+  __ mvw(t0, ContinuationEntry::cookie_value());
+  __ sw(t0, Address(sp, ContinuationEntry::cookie_offset()));
+#endif
+
+  __ sd(c_rarg1, Address(sp, ContinuationEntry::cont_offset()));
+  __ sw(c_rarg3, Address(sp, ContinuationEntry::flags_offset()));
+  __ sd(zr,      Address(sp, ContinuationEntry::chunk_offset()));
+  __ sw(zr,      Address(sp, ContinuationEntry::argsize_offset()));
+  __ sw(zr,      Address(sp, ContinuationEntry::pin_count_offset()));
+
+  __ ld(t0, Address(xthread, JavaThread::cont_fastpath_offset()));
+  __ sd(t0, Address(sp, ContinuationEntry::parent_cont_fastpath_offset()));
+  __ ld(t0, Address(xthread, JavaThread::held_monitor_count_offset()));
+  __ sd(t0, Address(sp, ContinuationEntry::parent_held_monitor_count_offset()));
+
+  __ sd(zr, Address(xthread, JavaThread::cont_fastpath_offset()));
+  __ sd(zr, Address(xthread, JavaThread::held_monitor_count_offset()));
+}
+
+// on entry, sp points to the ContinuationEntry
+// on exit, rfp points to the spilled rfp in the entry frame
+void continuation_enter_cleanup(MacroAssembler* masm) {
+#ifndef PRODUCT
+  Label OK;
+  __ ld(t0, Address(xthread, JavaThread::cont_entry_offset()));
+  __ beq(sp, t0, OK);
+  __ stop("incorrect sp");
+  __ bind(OK);
+#endif
+
+  __ ld(t0, Address(sp, ContinuationEntry::parent_cont_fastpath_offset()));
+  __ sd(t0, Address(xthread, JavaThread::cont_fastpath_offset()));
+  __ ld(t0, Address(sp, ContinuationEntry::parent_held_monitor_count_offset()));
+  __ sd(t0, Address(xthread, JavaThread::held_monitor_count_offset()));
+
+  __ ld(t0, Address(sp, ContinuationEntry::parent_offset()));
+  __ sd(t0, Address(xthread, JavaThread::cont_entry_offset()));
+  __ add(fp, sp, (int)ContinuationEntry::size());
+}
+
+#undef __
