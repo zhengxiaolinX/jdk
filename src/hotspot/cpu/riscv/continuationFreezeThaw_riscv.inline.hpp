@@ -142,7 +142,7 @@ inline void FreezeBase::relativize_interpreted_frame_metadata(const frame& f, co
     || (f.unextended_sp() == f.sp()), "");
   assert(f.fp() > (intptr_t*)f.at(frame::interpreter_frame_initial_sp_offset), "");
 
-  // on RISCV, we may insert padding between the locals and the rest of the frame
+  // On RISCV, we may insert padding between the locals and the rest of the frame
   // (see TemplateInterpreterGenerator::generate_normal_entry, and AbstractInterpreter::layout_activation)
   // so we compute locals "from scratch" rather than relativizing the value in the stack frame, which might include padding,
   // since we don't freeze the padding word (see recurse_freeze_interpreted_frame).
@@ -213,7 +213,9 @@ template<typename FKind> frame ThawBase::new_stack_frame(const frame& hf, frame&
 
   if (FKind::interpreted) {
     intptr_t* heap_sp = hf.unextended_sp();
-    const int fsize = ContinuationHelper::InterpretedFrame::frame_bottom(hf) - hf.unextended_sp();
+    // If caller is interpreted it already made room for the callee arguments
+    int overlap = caller.is_interpreted_frame() ? ContinuationHelper::InterpretedFrame::stack_argsize(hf) : 0;
+    const int fsize = ContinuationHelper::InterpretedFrame::frame_bottom(hf) - hf.unextended_sp() - overlap;
     const int locals = hf.interpreter_frame_method()->max_locals();
     intptr_t* frame_sp = caller.unextended_sp() - fsize;
     intptr_t* fp = frame_sp + (hf.fp() - heap_sp);
@@ -243,7 +245,7 @@ template<typename FKind> frame ThawBase::new_stack_frame(const frame& hf, frame&
       int argsize = hf.compiled_frame_stack_argsize();
 
       fsize += argsize;
-      frame_sp   -= argsize;
+      frame_sp -= argsize;
       caller.set_sp(caller.sp() - argsize);
       assert(caller.sp() == frame_sp + (fsize-argsize), "");
 
@@ -258,7 +260,7 @@ template<typename FKind> frame ThawBase::new_stack_frame(const frame& hf, frame&
       fp = frame_sp + FKind::size(hf) - 2;
     } else {
       fp = FKind::stub
-        ? frame_sp + fsize - 2 // on AArch64, this value is used for the safepoint stub
+        ? frame_sp + fsize - 2 // On RISCV, this value is used for the safepoint stub
         : *(intptr_t**)(hf.sp() - 2); // we need to re-read fp because it may be an oop and we might have fixed the frame.
     }
     return frame(frame_sp, frame_sp, fp, hf.pc(), hf.cb(), hf.oop_map(), false); // TODO PERF : this computes deopt state; is it necessary?
