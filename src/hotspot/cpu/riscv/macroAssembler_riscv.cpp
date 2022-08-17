@@ -584,7 +584,7 @@ void MacroAssembler::emit_static_call_stub() {
 
   mov_metadata(xmethod, (Metadata*)NULL);
 
-  // Jump to the entry point of the i2c stub.
+  // Jump to the entry point of the c2i stub.
   int32_t offset = 0;
   movptr_with_offset(t0, 0, offset);
   jalr(x0, t0, offset);

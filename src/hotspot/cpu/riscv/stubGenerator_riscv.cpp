@@ -3913,8 +3913,6 @@ class StubGenerator: public StubCodeGenerator {
       generate_all();
     }
   }
-
-  ~StubGenerator() {}
 }; // end class declaration
 
 #define UCM_TABLE_MAX_ENTRIES 8

@@ -1057,6 +1057,129 @@ static void verify_oop_args(MacroAssembler* masm,
   }
 }
 
+// defined in stubGenerator_riscv.cpp
+OopMap* continuation_enter_setup(MacroAssembler* masm, int& stack_slots);
+void fill_continuation_entry(MacroAssembler* masm);
+void continuation_enter_cleanup(MacroAssembler* masm);
+
+// enterSpecial(Continuation c, boolean isContinue, boolean isVirtualThread)
+// On entry: c_rarg1 -- the continuation object
+//           c_rarg2 -- isContinue
+//           c_rarg3 -- isVirtualThread
+static void gen_continuation_enter(MacroAssembler* masm,
+                                   const methodHandle& method,
+                                   const BasicType* sig_bt,
+                                   const VMRegPair* regs,
+                                   int& exception_offset,
+                                   OopMapSet*oop_maps,
+                                   int& frame_complete,
+                                   int& stack_slots,
+                                   int& interpreted_entry_offset,
+                                   int& compiled_entry_offset) {
+  // verify_oop_args(masm, method, sig_bt, regs);
+  Address resolve(SharedRuntime::get_resolve_static_call_stub(), relocInfo::static_call_type);
+
+  address start = __ pc();
+
+  Label call_thaw, exit;
+
+  // i2i entry used at interp_only_mode only
+  interpreted_entry_offset = __ pc() - start;
+  {
+#ifdef ASSERT
+    Label is_interp_only;
+    __ lw(t0, Address(xthread, JavaThread::interp_only_mode_offset()));
+    __ bnez(t0, is_interp_only);
+    __ stop("enterSpecial interpreter entry called when not in interp_only_mode");
+    __ bind(is_interp_only);
+#endif
+
+    // Read interpreter arguments into registers (this is an ad-hoc i2c adapter)
+    __ ld(c_rarg1, Address(esp, Interpreter::stackElementSize * 2));
+    __ ld(c_rarg2, Address(esp, Interpreter::stackElementSize * 1));
+    __ ld(c_rarg3, Address(esp, Interpreter::stackElementSize * 0));
+    __ push_cont_fastpath(xthread);
+
+    __ enter();
+    stack_slots = 2; // will be adjusted in setup
+    OopMap* map = continuation_enter_setup(masm, stack_slots);
+    // The frame is complete here, but we only record it for the compiled entry, so the frame would appear unsafe,
+    // but that's okay because at the very worst we'll miss an async sample, but we're in interp_only_mode anyway.
+
+    fill_continuation_entry(masm);
+
+    __ bnez(c_rarg2, call_thaw);
+
+    address mark = __ pc();
+    __ trampoline_call(resolve);
+
+    oop_maps->add_gc_map(__ pc() - start, map);
+    __ post_call_nop();
+
+    __ j(exit);
+
+    CodeBuffer* cbuf = masm->code_section()->outer();
+    CompiledStaticCall::emit_to_interp_stub(*cbuf, mark);
+  }
+
+  // compiled entry
+  __ align(CodeEntryAlignment);
+  compiled_entry_offset = __ pc() - start;
+
+  __ enter();
+  stack_slots = 2; // will be adjusted in setup
+  OopMap* map = continuation_enter_setup(masm, stack_slots);
+  frame_complete = __ pc() - start;
+
+  fill_continuation_entry(masm);
+
+  __ bnez(c_rarg2, call_thaw);
+
+  address mark = __ pc();
+  __ trampoline_call(resolve);
+
+  oop_maps->add_gc_map(__ pc() - start, map);
+  __ post_call_nop();
+
+  __ j(exit);
+
+  __ bind(call_thaw);
+
+  rt_call(masm, CAST_FROM_FN_PTR(address, StubRoutines::cont_thaw()));
+  oop_maps->add_gc_map(__ pc() - start, map->deep_copy());
+  ContinuationEntry::_return_pc_offset = __ pc() - start;
+  __ post_call_nop();
+
+  __ bind(exit);
+  continuation_enter_cleanup(masm);
+  __ leave();
+  __ ret();
+
+  // exception handling
+  exception_offset = __ pc() - start;
+  {
+    __ mv(x9, x10); // save return value contaning the exception oop in callee-saved R9
+
+    continuation_enter_cleanup(masm);
+
+    __ ld(c_rarg1, Address(fp, -1 * wordSize)); // return address
+    __ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::exception_handler_for_return_address), xthread, c_rarg1);
+
+    // see OptoRuntime::generate_exception_blob: x10 -- exception oop, x13 -- exception pc
+
+    __ mv(x11, x10); // the exception handler
+    __ mv(x10, x9); // restore return value contaning the exception oop
+    __ verify_oop(x10);
+
+    __ leave();
+    __ mv(x13, ra);
+    __ jr(x11); // the exception handler
+  }
+
+  CodeBuffer* cbuf = masm->code_section()->outer();
+  CompiledStaticCall::emit_to_interp_stub(*cbuf, mark);
+}
+
 static void gen_special_dispatch(MacroAssembler* masm,
                                  const methodHandle& method,
                                  const BasicType* sig_bt,
@@ -1153,6 +1276,40 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
                                                 BasicType* in_sig_bt,
                                                 VMRegPair* in_regs,
                                                 BasicType ret_type) {
+  if (method->is_continuation_enter_intrinsic()) {
+    vmIntrinsics::ID iid = method->intrinsic_id();
+    intptr_t start = (intptr_t)__ pc();
+    int vep_offset = 0;
+    int exception_offset = 0;
+    int frame_complete = 0;
+    int stack_slots = 0;
+    OopMapSet* oop_maps =  new OopMapSet();
+    int interpreted_entry_offset = -1;
+    gen_continuation_enter(masm,
+                         method,
+                         in_sig_bt,
+                         in_regs,
+                         exception_offset,
+                         oop_maps,
+                         frame_complete,
+                         stack_slots,
+                         interpreted_entry_offset,
+                         vep_offset);
+    __ flush();
+    nmethod* nm = nmethod::new_native_nmethod(method,
+                                              compile_id,
+                                              masm->code(),
+                                              vep_offset,
+                                              frame_complete,
+                                              stack_slots,
+                                              in_ByteSize(-1),
+                                              in_ByteSize(-1),
+                                              oop_maps,
+                                              exception_offset);
+    ContinuationEntry::set_enter_code(nm, interpreted_entry_offset);
+    return nm;
+  }
+
   if (method->is_method_handle_intrinsic()) {
     vmIntrinsics::ID iid = method->intrinsic_id();
     intptr_t start = (intptr_t)__ pc();
