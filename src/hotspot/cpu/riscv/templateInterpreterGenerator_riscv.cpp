@@ -789,8 +789,14 @@ void TemplateInterpreterGenerator::generate_fixed_frame(bool native_call) {
 
 address TemplateInterpreterGenerator::generate_Continuation_doYield_entry(void) {
   if (!Continuations::enabled()) return nullptr;
-  Unimplemented();
-  return NULL;
+
+  address entry = __ pc();
+  assert(StubRoutines::cont_doYield() != NULL, "stub not yet generated");
+
+  __ push_cont_fastpath(xthread);
+  __ far_jump(RuntimeAddress(CAST_FROM_FN_PTR(address, StubRoutines::cont_doYield())));
+
+  return entry;
 }
 
 // Various method entries
