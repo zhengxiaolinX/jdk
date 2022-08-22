@@ -560,6 +560,22 @@ void frame::describe_pd(FrameValues& values, int frame_no) {
     DESCRIBE_FP_OFFSET(interpreter_frame_bcp);
     DESCRIBE_FP_OFFSET(interpreter_frame_initial_sp);
   }
+
+  if (is_java_frame() || Continuation::is_continuation_enterSpecial(*this)) {
+    intptr_t* ret_pc_loc;
+    intptr_t* fp_loc;
+    if (is_interpreted_frame()) {
+      ret_pc_loc = fp() + return_addr_offset;
+      fp_loc = fp();
+    } else {
+      ret_pc_loc = real_fp() - 1;
+      fp_loc = real_fp() - 2;
+    }
+    address ret_pc = *(address*)ret_pc_loc;
+    values.describe(frame_no, ret_pc_loc,
+      Continuation::is_return_barrier_entry(ret_pc) ? "return address (return barrier)" : "return address");
+    values.describe(-1, fp_loc, "saved fp", 0); // "unowned" as value belongs to sender
+  }
 }
 #endif
 
