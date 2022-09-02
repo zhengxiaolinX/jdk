@@ -118,7 +118,7 @@ public:
 class C2EntryBarrierStub: public ResourceObj {
   Label _slow_path;
   Label _continuation;
-  Label _guard; // Used on AArch64 and RISCV64
+  Label _guard; // Used on AArch64
 
 public:
   C2EntryBarrierStub() :

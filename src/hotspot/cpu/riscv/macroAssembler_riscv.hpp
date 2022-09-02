@@ -47,7 +47,7 @@ class MacroAssembler: public Assembler {
   void safepoint_poll(Label& slow_path, bool at_return, bool acquire, bool in_nmethod);
 
   // Alignment
-  int align(int modulus, int extra_offset = 0);
+  void align(int modulus, int extra_offset = 0);
 
   // nop
   void post_call_nop();
