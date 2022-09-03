@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2021, 2022, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2021, 2022, Huawei Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2022, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -20,26 +19,25 @@
  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
  * or visit www.oracle.com if you need additional information or have any
  * questions.
- *
  */
 
-#include "precompiled.hpp"
-#include "runtime/registerMap.hpp"
-#include "vmreg_riscv.inline.hpp"
+/*
+ * @test
+ * @bug 8290451
+ * @summary Incorrect result when switching to C2 OSR compilation from C1
+ * @compile BadStateAtLongCmp.jasm
+ * @run main/othervm -Xbatch TestBadStateAtLongCmp
+ */
 
-address RegisterMap::pd_location(VMReg base_reg, int slot_idx) const {
-  if (base_reg->is_VectorRegister()) {
-    assert(base_reg->is_concrete(), "must pass base reg");
-    int base_reg_enc = (base_reg->value() - ConcreteRegisterImpl::max_fpr) /
-                       VectorRegister::max_slots_per_register;
-    intptr_t offset_in_bytes = slot_idx * VMRegImpl::stack_slot_size;
-    address base_location = location(base_reg, nullptr);
-    if (base_location != NULL) {
-      return base_location + offset_in_bytes;
-    } else {
-      return NULL;
+public class TestBadStateAtLongCmp {
+
+    public static void main(String[] args) {
+        for (int i = 0; i < 20_000; i++) {
+            BadStateAtLongCmp.test();
+        }
+        int expected = 20_000 * 1000;
+        if (BadStateAtLongCmp.field != expected) {
+            throw new RuntimeException("test failed: " + BadStateAtLongCmp.field + " != " + expected);
+        }
     }
-  } else {
-    return location(base_reg->next(slot_idx), nullptr);
-  }
 }
