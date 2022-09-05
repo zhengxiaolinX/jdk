@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -19,33 +19,38 @@
  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
  * or visit www.oracle.com if you need additional information or have any
  * questions.
- *
  */
 
-package sun.jvm.hotspot.debugger;
+/**
+ * @test
+ * @bug 8292660
+ * @summary Test that blocks made unreachable after processing multiple infinite
+ *          loops in the block ordering phase are removed correctly.
+ *
+ * @run main/othervm -Xcomp -XX:CompileOnly=compiler.loopopts.TestMultipleInfiniteLoops::test
+ *                   compiler.loopopts.TestMultipleInfiniteLoops
+ */
 
-public class AddressException extends RuntimeException {
-  private long addr;
+package compiler.loopopts;
 
-  public AddressException(long addr) {
-    this.addr = addr;
-  }
+public class TestMultipleInfiniteLoops {
 
-  public AddressException(String message, long addr) {
-    super(message);
-    this.addr = addr;
-  }
+    static int foo;
 
-  public long getAddress() {
-    return addr;
-  }
-
-  public String getMessage() {
-    String msg = super.getMessage();
-    if (msg != null) {
-      return msg;
-    } else {
-      return Long.toHexString(addr);
+    static void test() {
+        int i = 5, j;
+        while (i > 0) {
+            for (j = i; 1 > j; ) {
+                switch (i) {
+                case 4:
+                    foo = j;
+                }
+            }
+            i++;
+        }
     }
-  }
+
+    public static void main(String[] args) {
+        test();
+    }
 }
