@@ -138,7 +138,7 @@
     arg_reg_save_area_bytes                          =  0,
 
     // size, in words, of frame metadata (e.g. pc and link)
-    metadata_words                                   = sender_sp_offset,
+    metadata_words                                   =  2,
     // in bytes
     frame_alignment                                  = 16,
     // size, in words, of maximum shift in frame position due to alignment
