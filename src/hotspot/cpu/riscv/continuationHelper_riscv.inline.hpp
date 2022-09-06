@@ -37,7 +37,7 @@ static inline intptr_t** link_address(const frame& f) {
   assert(FKind::is_instance(f), "");
   return FKind::interpreted
             ? (intptr_t**)(f.fp() + frame::link_offset)
-            : (intptr_t**)(f.unextended_sp() + f.cb()->frame_size() - frame::sender_sp_offset);
+            : (intptr_t**)(f.unextended_sp() + f.cb()->frame_size() - 2);
 }
 
 inline int ContinuationHelper::frame_align_words(int size) {
