@@ -4183,6 +4183,9 @@ void continuation_enter_cleanup(MacroAssembler* masm) {
   __ ld(t0, Address(sp, ContinuationEntry::parent_offset()));
   __ sd(t0, Address(xthread, JavaThread::cont_entry_offset()));
   __ add(fp, sp, (int)ContinuationEntry::size());
+
+  // We always have a leave() afterward, which is different from AArch64's.
+  __ addi(fp, fp, 2 * wordSize);
 }
 
 #undef __
