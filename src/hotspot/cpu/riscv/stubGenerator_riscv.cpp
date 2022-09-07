@@ -3884,11 +3884,13 @@ class StubGenerator: public StubCodeGenerator {
       __ mv(x10, x9); // restore return value contaning the exception oop
       __ verify_oop(x10);
 
+      __ addi(fp, fp, 2 * wordSize);  // 2 extra words to match up with leave()
       __ leave();
       __ mv(x13, ra);
       __ jr(x11); // the exception handler
     } else {
       // We're "returning" into the topmost thawed frame; see Thaw::push_return_frame
+      __ addi(fp, fp, 2 * wordSize);  // 2 extra words to match up with leave()
       __ leave();
       __ ret();
     }
