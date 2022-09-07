@@ -4165,7 +4165,7 @@ void fill_continuation_entry(MacroAssembler* masm) {
 }
 
 // on entry, sp points to the ContinuationEntry
-// on exit, rfp points to the spilled rfp in the entry frame
+// on exit, rfp points to the spilled rfp + 2 * wordSize in the entry frame
 void continuation_enter_cleanup(MacroAssembler* masm) {
 #ifndef PRODUCT
   Label OK;
@@ -4182,7 +4182,7 @@ void continuation_enter_cleanup(MacroAssembler* masm) {
 
   __ ld(t0, Address(sp, ContinuationEntry::parent_offset()));
   __ sd(t0, Address(xthread, JavaThread::cont_entry_offset()));
-  __ add(fp, sp, (int)ContinuationEntry::size() + 2 * wordSize /* Adjust leave() afterward, which is different from AArch64's */);
+  __ add(fp, sp, (int)ContinuationEntry::size() + 2 * wordSize /* 2 extra words to match up with leave() */);
 }
 
 #undef __
