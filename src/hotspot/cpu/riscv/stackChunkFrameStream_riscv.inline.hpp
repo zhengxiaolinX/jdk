@@ -75,7 +75,15 @@ intptr_t* StackChunkFrameStream<frame_kind>::next_sp_for_interpreter_frame() con
 
 template <ChunkFrames frame_kind>
 inline void StackChunkFrameStream<frame_kind>::next_for_interpreter_frame() {
-  Unimplemented();
+  assert_is_interpreted_and_frame_type_mixed();
+  if (derelativize(frame::interpreter_frame_locals_offset) + 1 >= _end) {
+    _unextended_sp = _end;
+    _sp = _end;
+  } else {
+    intptr_t* fp = this->fp();
+    _unextended_sp = fp + fp[frame::interpreter_frame_sender_sp_offset];
+    _sp = fp + frame::sender_sp_offset;
+  }
 }
 
 template <ChunkFrames frame_kind>
@@ -86,8 +94,9 @@ inline int StackChunkFrameStream<frame_kind>::interpreter_frame_size() const {
 
 template <ChunkFrames frame_kind>
 inline int StackChunkFrameStream<frame_kind>::interpreter_frame_stack_argsize() const {
-  Unimplemented();
-  return 0;
+  assert_is_interpreted_and_frame_type_mixed();
+  int diff = (int)(derelativize(frame::interpreter_frame_locals_offset) - derelativize(frame::interpreter_frame_sender_sp_offset) + 1);
+  return diff;
 }
 
 template <ChunkFrames frame_kind>
