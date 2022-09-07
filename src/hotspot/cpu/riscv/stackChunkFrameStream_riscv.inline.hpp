@@ -45,26 +45,29 @@ inline frame StackChunkFrameStream<frame_kind>::to_frame() const {
 
 template <ChunkFrames frame_kind>
 inline address StackChunkFrameStream<frame_kind>::get_pc() const {
-  Unimplemented();
-  return NULL;
+  assert(!is_done(), "");
+  return *(address*)(_sp - 1);
 }
 
 template <ChunkFrames frame_kind>
 inline intptr_t* StackChunkFrameStream<frame_kind>::fp() const {
-  Unimplemented();
-  return NULL;
+  intptr_t* fp_addr = _sp - frame::sender_sp_offset;
+  return (frame_kind == ChunkFrames::Mixed && is_interpreted())
+    ? fp_addr + *fp_addr // derelativize
+    : *(intptr_t**)fp_addr;
 }
 
 template <ChunkFrames frame_kind>
 inline intptr_t* StackChunkFrameStream<frame_kind>::derelativize(int offset) const {
-  Unimplemented();
-  return NULL;
+  intptr_t* fp = this->fp();
+  assert(fp != nullptr, "");
+  return fp + fp[offset];
 }
 
 template <ChunkFrames frame_kind>
 inline intptr_t* StackChunkFrameStream<frame_kind>::unextended_sp_for_interpreter_frame() const {
-  Unimplemented();
-  return NULL;
+  assert_is_interpreted_and_frame_type_mixed();
+  return derelativize(frame::interpreter_frame_last_sp_offset);
 }
 
 template <ChunkFrames frame_kind>
