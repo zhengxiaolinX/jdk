@@ -4165,7 +4165,7 @@ void fill_continuation_entry(MacroAssembler* masm) {
 }
 
 // on entry, sp points to the ContinuationEntry
-// on exit, rfp points to the spilled rfp + 2 * wordSize in the entry frame
+// on exit, fp points to the spilled fp + 2 * wordSize in the entry frame
 void continuation_enter_cleanup(MacroAssembler* masm) {
 #ifndef PRODUCT
   Label OK;
