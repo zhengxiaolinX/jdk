@@ -51,7 +51,7 @@ inline address StackChunkFrameStream<frame_kind>::get_pc() const {
 
 template <ChunkFrames frame_kind>
 inline intptr_t* StackChunkFrameStream<frame_kind>::fp() const {
-  intptr_t* fp_addr = _sp - frame::sender_sp_offset;
+  intptr_t* fp_addr = _sp - 2;
   return (frame_kind == ChunkFrames::Mixed && is_interpreted())
     ? fp_addr + *fp_addr // derelativize
     : *(intptr_t**)fp_addr;
