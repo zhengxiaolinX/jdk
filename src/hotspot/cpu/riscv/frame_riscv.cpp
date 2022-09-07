@@ -475,7 +475,7 @@ bool frame::is_interpreted_frame_valid(JavaThread* thread) const {
 
   // validate locals
   address locals = (address) *interpreter_frame_locals_addr();
-  if (locals > thread->stack_base() || locals < (address) fp()) {
+  if (locals > thread->stack_base() /*|| locals < (address) fp() */) {
     return false;
   }
 
