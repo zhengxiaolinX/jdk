@@ -422,6 +422,14 @@ frame frame::sender_for_interpreter_frame(RegisterMap* map) const {
   }
 #endif // COMPILER2
 
+  if (Continuation::is_return_barrier_entry(sender_pc())) {
+    if (map->walk_cont()) { // about to walk into an h-stack
+      return Continuation::top_frame(*this, map);
+    } else {
+      return Continuation::continuation_bottom_sender(map->thread(), *this, sender_sp);
+    }
+  }
+
   return frame(sender_sp, unextended_sp, link(), sender_pc());
 }
 
