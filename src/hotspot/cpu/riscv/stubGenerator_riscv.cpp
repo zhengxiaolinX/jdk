@@ -3872,7 +3872,7 @@ class StubGenerator: public StubCodeGenerator {
     __ mv(fp, sp);
 
     if (return_barrier_exception) {
-      __ ld(c_rarg1, Address(fp, -1 * wordSize)); // return address
+      __ ld(c_rarg1, Address(fp, 1 * wordSize)); // return address
       __ verify_oop(x10);
       __ mv(x9, x10); // save return value contaning the exception oop in callee-saved R9
 
