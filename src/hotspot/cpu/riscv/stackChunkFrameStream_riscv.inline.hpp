@@ -69,8 +69,8 @@ inline intptr_t* StackChunkFrameStream<frame_kind>::unextended_sp_for_interprete
 
 template <ChunkFrames frame_kind>
 intptr_t* StackChunkFrameStream<frame_kind>::next_sp_for_interpreter_frame() const {
-  Unimplemented();
-  return NULL;
+  assert_is_interpreted_and_frame_type_mixed();
+  return (derelativize(frame::interpreter_frame_locals_offset) + 1 >= _end) ? _end : fp() + 2;
 }
 
 template <ChunkFrames frame_kind>
@@ -80,8 +80,11 @@ inline void StackChunkFrameStream<frame_kind>::next_for_interpreter_frame() {
 
 template <ChunkFrames frame_kind>
 inline int StackChunkFrameStream<frame_kind>::interpreter_frame_size() const {
-  Unimplemented();
-  return 0;
+  assert_is_interpreted_and_frame_type_mixed();
+
+  intptr_t* top = unextended_sp(); // later subtract argsize if callee is interpreted
+  intptr_t* bottom = derelativize(frame::interpreter_frame_locals_offset) + 1; // the sender's unextended sp: derelativize(frame::interpreter_frame_sender_sp_offset);
+  return (int)(bottom - top);
 }
 
 template <ChunkFrames frame_kind>
@@ -92,8 +95,15 @@ inline int StackChunkFrameStream<frame_kind>::interpreter_frame_stack_argsize() 
 
 template <ChunkFrames frame_kind>
 inline int StackChunkFrameStream<frame_kind>::interpreter_frame_num_oops() const {
-  Unimplemented();
-  return 0;
+  assert_is_interpreted_and_frame_type_mixed();
+  ResourceMark rm;
+  InterpreterOopMap mask;
+  frame f = to_frame();
+  f.interpreted_frame_oop_map(&mask);
+  return mask.num_oops()
+        + 1 // for the mirror oop
+        + ((intptr_t*)f.interpreter_frame_monitor_begin()
+            - (intptr_t*)f.interpreter_frame_monitor_end())/BasicObjectLock::size();
 }
 
 template<>
@@ -105,7 +115,9 @@ inline void StackChunkFrameStream<ChunkFrames::Mixed>::update_reg_map_pd(Registe
 template<>
 template<>
 inline void StackChunkFrameStream<ChunkFrames::CompiledOnly>::update_reg_map_pd(RegisterMap* map) {
-  Unimplemented();
+  if (map->update_map()) {
+    frame::update_map_with_saved_link(map, map->in_cont() ? (intptr_t**)2 : (intptr_t**)(_sp - 2));
+  }
 }
 
 template <ChunkFrames frame_kind>
