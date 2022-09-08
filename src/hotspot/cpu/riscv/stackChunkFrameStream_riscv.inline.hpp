@@ -99,7 +99,10 @@ inline int StackChunkFrameStream<frame_kind>::interpreter_frame_num_oops() const
 template<>
 template<>
 inline void StackChunkFrameStream<ChunkFrames::Mixed>::update_reg_map_pd(RegisterMap* map) {
-  Unimplemented();
+  if (map->update_map()) {
+    frame::update_map_with_saved_link(map, map->in_cont() ? (intptr_t**)(intptr_t)2
+                                                          : (intptr_t**)(_sp - 2));
+  }
 }
 
 template<>
