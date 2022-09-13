@@ -69,6 +69,13 @@ class MacroAssembler: public Assembler {
     addi(sp, sp, 2 * wordSize);
   }
 
+  void leave_continuation() {
+    mv(sp, fp);
+    ld(fp, Address(sp));
+    ld(ra, Address(sp, wordSize));
+    addi(sp, sp, 2 * wordSize);
+  }
+
 
   // Support for getting the JavaThread pointer (i.e.; a reference to thread-local information)
   // The pointer will be loaded into the thread register.

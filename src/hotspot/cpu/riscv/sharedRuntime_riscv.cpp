@@ -1139,7 +1139,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
 
   __ bind(exit);
   continuation_enter_cleanup(masm);
-  __ leave();
+  __ leave_continuation();
   __ ret();
 
   // exception handling
@@ -1149,7 +1149,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
 
     continuation_enter_cleanup(masm);
 
-    __ ld(c_rarg1, Address(fp, -1 * wordSize)); // return address
+    __ ld(c_rarg1, Address(fp, wordSize)); // return address
     __ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::exception_handler_for_return_address), xthread, c_rarg1);
 
     // see OptoRuntime::generate_exception_blob: x10 -- exception oop, x13 -- exception pc
@@ -1158,7 +1158,7 @@ static void gen_continuation_enter(MacroAssembler* masm,
     __ mv(x10, x9); // restore return value contaning the exception oop
     __ verify_oop(x10);
 
-    __ leave();
+    __ leave_continuation();
     __ mv(x13, ra);
     __ jr(x11); // the exception handler
   }
@@ -1213,6 +1213,7 @@ static void gen_continuation_yield(MacroAssembler* masm,
   // We've succeeded, set sp to the ContinuationEntry
   __ ld(sp, Address(xthread, JavaThread::cont_entry_offset()));
   continuation_enter_cleanup(masm);
+  __ addi(fp, fp, 2 * wordSize); // 2 extra words to match up with leave()
 
   __ bind(pinned); // pinned -- return to caller
 

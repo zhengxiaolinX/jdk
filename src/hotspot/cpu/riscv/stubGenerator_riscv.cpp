@@ -3884,14 +3884,12 @@ class StubGenerator: public StubCodeGenerator {
       __ mv(x10, x9); // restore return value contaning the exception oop
       __ verify_oop(x10);
 
-      __ addi(fp, fp, 2 * wordSize);  // 2 extra words to match up with leave()
-      __ leave();
+      __ leave_continuation();
       __ mv(x13, ra);
       __ jr(x11); // the exception handler
     } else {
       // We're "returning" into the topmost thawed frame; see Thaw::push_return_frame
-      __ addi(fp, fp, 2 * wordSize);  // 2 extra words to match up with leave()
-      __ leave();
+      __ leave_continuation();
       __ ret();
     }
 
@@ -4167,7 +4165,7 @@ void fill_continuation_entry(MacroAssembler* masm) {
 }
 
 // on entry, sp points to the ContinuationEntry
-// on exit, fp points to the spilled fp + 2 * wordSize in the entry frame
+// on exit, fp points to the spilled fp in the entry frame
 void continuation_enter_cleanup(MacroAssembler* masm) {
 #ifndef PRODUCT
   Label OK;
@@ -4184,7 +4182,7 @@ void continuation_enter_cleanup(MacroAssembler* masm) {
 
   __ ld(t0, Address(sp, ContinuationEntry::parent_offset()));
   __ sd(t0, Address(xthread, JavaThread::cont_entry_offset()));
-  __ add(fp, sp, (int)ContinuationEntry::size() + 2 * wordSize /* 2 extra words to match up with leave() */);
+  __ add(fp, sp, (int)ContinuationEntry::size());
 }
 
 #undef __
