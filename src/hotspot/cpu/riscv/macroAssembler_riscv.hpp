@@ -70,6 +70,7 @@ class MacroAssembler: public Assembler {
   }
 
   void leave_continuation() {
+    // Same as AArch64 style leave(): fp has been adjusted by continuation_enter_cleanup().
     mv(sp, fp);
     ld(fp, Address(sp));
     ld(ra, Address(sp, wordSize));
