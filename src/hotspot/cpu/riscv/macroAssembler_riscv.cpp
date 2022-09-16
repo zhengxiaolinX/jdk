@@ -1281,9 +1281,21 @@ int MacroAssembler::pd_patch_instruction_size(address branch, address target) {
   } else if (NativeInstruction::is_branch_at(branch)) {               // beq/bge/bgeu/blt/bltu/bne
     return patch_offset_in_conditional_branch(branch, offset);
   } else if (NativeInstruction::is_pc_relative_at(branch)) {          // auipc, addi/jalr/load
-    return patch_offset_in_pc_relative(branch, offset);
+    int ret = patch_offset_in_pc_relative(branch, offset);
+    {
+      // things written and read MUST be equal, or something weird must have happened
+      address target_after_patching = target_addr_for_insn(branch);
+      guarantee(target == target_after_patching, "FATAL: pc_relative not identical? " INTPTR_FORMAT " " INTPTR_FORMAT, p2i(target), p2i(target_after_patching));
+    }
+    return ret;
   } else if (NativeInstruction::is_movptr_at(branch)) {               // movptr
-    return patch_addr_in_movptr(branch, target);
+    int ret = patch_addr_in_movptr(branch, target);
+    {
+      // things written and read MUST be equal, or something weird must have happened
+      address target_after_patching = target_addr_for_insn(branch);
+      guarantee(target == target_after_patching, "FATAL: movptr not identical? " INTPTR_FORMAT " " INTPTR_FORMAT, p2i(target), p2i(target_after_patching));
+    }
+    return ret;
   } else if (NativeInstruction::is_li64_at(branch)) {                 // li64
     return patch_imm_in_li64(branch, target);
   } else if (NativeInstruction::is_li32_at(branch)) {                 // li32
