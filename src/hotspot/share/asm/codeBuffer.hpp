@@ -210,7 +210,14 @@ class CodeSection {
     set_end(curr);
   }
 
-  void emit_int16(int16_t x) { *((int16_t*) end()) = x; set_end(end() + sizeof(int16_t)); }
+  void emit_int16(int16_t x) {
+#ifdef RISCV64
+    Bytes::put_native_u2(end(), x);
+#else
+    *((int16_t*) end()) = x;
+#endif
+    set_end(end() + sizeof(int16_t));
+  }
   void emit_int16(int8_t x1, int8_t x2) {
     address curr = end();
     *((int8_t*)  curr++) = x1;
@@ -228,7 +235,11 @@ class CodeSection {
 
   void emit_int32(int32_t x) {
     address curr = end();
+#ifdef RISCV64
+    Bytes::put_native_u4(curr, x);
+#else
     *((int32_t*) curr) = x;
+#endif
     set_end(curr + sizeof(int32_t));
   }
   void emit_int32(int8_t x1, int8_t x2, int8_t x3, int8_t x4)  {
@@ -240,11 +251,39 @@ class CodeSection {
     set_end(curr);
   }
 
-  void emit_int64( int64_t x)  { *((int64_t*) end()) = x; set_end(end() + sizeof(int64_t)); }
+  void emit_int64( int64_t x)  {
+#ifdef RISCV64
+    Bytes::put_native_u8(end(), x);
+#else
+    *((int64_t*) end()) = x;
+#endif
+    set_end(end() + sizeof(int64_t));
+  }
 
-  void emit_float( jfloat  x)  { *((jfloat*)  end()) = x; set_end(end() + sizeof(jfloat)); }
-  void emit_double(jdouble x)  { *((jdouble*) end()) = x; set_end(end() + sizeof(jdouble)); }
-  void emit_address(address x) { *((address*) end()) = x; set_end(end() + sizeof(address)); }
+  void emit_float( jfloat  x)  {
+#ifdef RISCV64
+    Bytes::put_native_u4(end(), jint_cast(x));
+#else
+    *((jfloat*)  end()) = x;
+#endif
+    set_end(end() + sizeof(jfloat));
+  }
+  void emit_double(jdouble x)  {
+#ifdef RISCV64
+    Bytes::put_native_u8(end(), jlong_cast(x));
+#else
+    *((jdouble*) end()) = x;
+#endif
+    set_end(end() + sizeof(jdouble));
+  }
+  void emit_address(address x) {
+#ifdef RISCV64
+    Bytes::put_native_u8(end(), p2i(x));
+#else
+    *((address*) end()) = x;
+#endif
+    set_end(end() + sizeof(address));
+  }
 
   // Share a scratch buffer for relocinfo.  (Hacky; saves a resource allocation.)
   void initialize_shared_locs(relocInfo* buf, int length);
