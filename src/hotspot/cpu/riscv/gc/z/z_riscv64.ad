@@ -71,11 +71,11 @@ instruct zLoadP(iRegPNoSp dst, memory mem)
   ins_pipe(iload_reg_mem);
 %}
 
-instruct zCompareAndSwapP(iRegINoSp res, indirect mem, iRegP oldval, iRegP newval, rFlagsReg cr) %{
+instruct zCompareAndSwapP(iRegINoSp res, indirect mem, iRegP oldval, iRegP newval, iRegINoSp tmp1, rFlagsReg cr) %{
   match(Set res (CompareAndSwapP mem (Binary oldval newval)));
   match(Set res (WeakCompareAndSwapP mem (Binary oldval newval)));
   predicate(UseZGC && !needs_acquiring_load_reserved(n) && n->as_LoadStore()->barrier_data() == ZLoadBarrierStrong);
-  effect(KILL cr, TEMP_DEF res);
+  effect(KILL cr, TEMP_DEF res, TEMP tmp1);
 
   ins_cost(2 * VOLATILE_REF_COST);
 
@@ -87,9 +87,9 @@ instruct zCompareAndSwapP(iRegINoSp res, indirect mem, iRegP oldval, iRegP newva
     guarantee($mem$$index == -1 && $mem$$disp == 0, "impossible encoding");
     __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register, Assembler::int64,
                Assembler::relaxed /* acquire */, Assembler::rl /* release */, $res$$Register,
-               true /* result_as_bool */);
+               true /* result_as_bool */, $tmp1$$Register);
     __ beqz($res$$Register, failed);
-    __ mv(t0, $oldval$$Register);
+    __ mv(t0, $tmp1$$Register);
     __ bind(failed);
     if (barrier_data() != ZLoadBarrierElided) {
       Label good;
@@ -107,11 +107,11 @@ instruct zCompareAndSwapP(iRegINoSp res, indirect mem, iRegP oldval, iRegP newva
   ins_pipe(pipe_slow);
 %}
 
-instruct zCompareAndSwapPAcq(iRegINoSp res, indirect mem, iRegP oldval, iRegP newval, rFlagsReg cr) %{
+instruct zCompareAndSwapPAcq(iRegINoSp res, indirect mem, iRegP oldval, iRegP newval, iRegINoSp tmp1, rFlagsReg cr) %{
   match(Set res (CompareAndSwapP mem (Binary oldval newval)));
   match(Set res (WeakCompareAndSwapP mem (Binary oldval newval)));
   predicate(UseZGC && needs_acquiring_load_reserved(n) && (n->as_LoadStore()->barrier_data() == ZLoadBarrierStrong));
-  effect(KILL cr, TEMP_DEF res);
+  effect(KILL cr, TEMP_DEF res, TEMP tmp1);
 
   ins_cost(2 * VOLATILE_REF_COST);
 
@@ -123,9 +123,9 @@ instruct zCompareAndSwapPAcq(iRegINoSp res, indirect mem, iRegP oldval, iRegP ne
     guarantee($mem$$index == -1 && $mem$$disp == 0, "impossible encoding");
     __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register, Assembler::int64,
                Assembler::aq /* acquire */, Assembler::rl /* release */, $res$$Register,
-               true /* result_as_bool */);
+               true /* result_as_bool */, $tmp1$$Register);
     __ beqz($res$$Register, failed);
-    __ mv(t0, $oldval$$Register);
+    __ mv(t0, $tmp1$$Register);
     __ bind(failed);
     if (barrier_data() != ZLoadBarrierElided) {
       Label good;

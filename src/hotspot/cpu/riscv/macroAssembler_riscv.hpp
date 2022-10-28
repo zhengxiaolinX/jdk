@@ -881,7 +881,7 @@ public:
                Register new_val,
                enum operand_size size,
                Assembler::Aqrl acquire, Assembler::Aqrl release,
-               Register result, bool result_as_bool = false);
+               Register result, bool result_as_bool = false, Register real_result = noreg);
   void cmpxchg_weak(Register addr, Register expected,
                     Register new_val,
                     enum operand_size size,

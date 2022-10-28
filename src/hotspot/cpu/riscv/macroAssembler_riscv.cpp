@@ -2668,7 +2668,7 @@ void MacroAssembler::cmpxchg(Register addr, Register expected,
                              Register new_val,
                              enum operand_size size,
                              Assembler::Aqrl acquire, Assembler::Aqrl release,
-                             Register result, bool result_as_bool) {
+                             Register result, bool result_as_bool, Register real_result) {
   assert(size != int8 && size != int16, "unsupported operand size");
 
   Label retry_load, done, ne_done;
@@ -2677,6 +2677,10 @@ void MacroAssembler::cmpxchg(Register addr, Register expected,
   bne(t0, expected, ne_done);
   store_conditional(addr, new_val, size, release);
   bnez(t0, retry_load);
+
+  if (real_result != noreg) {
+    mv(real_result, expected);
+  }
 
   // equal, succeed
   if (result_as_bool) {
@@ -2688,6 +2692,11 @@ void MacroAssembler::cmpxchg(Register addr, Register expected,
 
   // not equal, failed
   bind(ne_done);
+
+  if (real_result != noreg) {
+    mv(real_result, t0);
+  }
+
   if (result_as_bool) {
     mv(result, zr);
   } else {
