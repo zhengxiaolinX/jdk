@@ -482,8 +482,23 @@ bool frame::is_interpreted_frame_valid(JavaThread* thread) const {
   }
 
   // validate locals
-  address locals =  (address) *interpreter_frame_locals_addr();
-  return thread->is_in_stack_range_incl(locals, (address)fp());
+  address locals = (address) *interpreter_frame_locals_addr();
+  intptr_t *limit = fp();
+  if (m->max_locals() == 0) {
+    // if max_locals == 0:
+    //
+    //                              ----------
+    //                              |        |
+    //                              |        |
+    //     fp(rv)  -> sender_sp ->  ----------
+    //                              |        |
+    //                sender_pc ->  ----------  <-- [ our locals() points out here if max_locals == 0 ]
+    //                              |        |
+    // fp(aarch64) -> link_addr ->  ----------
+    //
+    limit -= 1;
+  }
+  return thread->is_in_stack_range_incl(locals, (address)limit);
 }
 
 BasicType frame::interpreter_frame_result(oop* oop_result, jvalue* value_result) {
