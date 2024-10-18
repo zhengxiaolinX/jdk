@@ -2771,6 +2771,8 @@ void MacroAssembler::decode_klass_not_null(Register dst, Register src, Register 
     return;
   }
 
+  assert(CompressedKlassPointers::shift() == 0, "base>0 and shift>0 should never be needed");
+
   Register xbase = dst;
   if (dst == src) {
     xbase = tmp;
@@ -2778,14 +2780,7 @@ void MacroAssembler::decode_klass_not_null(Register dst, Register src, Register 
 
   assert_different_registers(src, xbase);
   mv(xbase, (uintptr_t)CompressedKlassPointers::base());
-
-  if (CompressedKlassPointers::shift() != 0) {
-    assert(LogKlassAlignmentInBytes == CompressedKlassPointers::shift(), "decode alg wrong");
-    assert_different_registers(t0, xbase);
-    shadd(dst, src, xbase, t0, LogKlassAlignmentInBytes);
-  } else {
-    add(dst, xbase, src);
-  }
+  add(dst, xbase, src);
 }
 
 void MacroAssembler::encode_klass_not_null(Register r, Register tmp) {
@@ -2806,8 +2801,9 @@ void MacroAssembler::encode_klass_not_null(Register dst, Register src, Register 
     return;
   }
 
-  if (((uint64_t)CompressedKlassPointers::base() & 0xffffffff) == 0 &&
-      CompressedKlassPointers::shift() == 0) {
+  assert(CompressedKlassPointers::shift() == 0, "base>0 and shift>0 should never be needed");
+
+  if (((uint64_t)CompressedKlassPointers::base() & 0xffffffff) == 0) {
     zero_extend(dst, src, 32);
     return;
   }
@@ -2820,10 +2816,6 @@ void MacroAssembler::encode_klass_not_null(Register dst, Register src, Register 
   assert_different_registers(src, xbase);
   mv(xbase, (uintptr_t)CompressedKlassPointers::base());
   sub(dst, src, xbase);
-  if (CompressedKlassPointers::shift() != 0) {
-    assert(LogKlassAlignmentInBytes == CompressedKlassPointers::shift(), "decode alg wrong");
-    srli(dst, dst, LogKlassAlignmentInBytes);
-  }
 }
 
 void MacroAssembler::decode_heap_oop_not_null(Register r) {
